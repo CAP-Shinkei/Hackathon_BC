@@ -32,7 +32,7 @@ Every version and its scores on held-out external games are in `EXPERIMENTS.md`.
 
 ## Reproduce the submission
 
-Python 3.12, about 16 GB of RAM, about 20 minutes on 14 cores.
+Python 3.12, about 8 GB of RAM, about 20 minutes on 14 cores.
 
 ```bash
 pip install -r requirements.txt

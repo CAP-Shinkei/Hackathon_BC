@@ -218,3 +218,37 @@ Reading:
   do not exist in a fixed tactical camera, so this part of SkillCorner is not representative either.
 - Side finding: the simulator's 0.3 m per-frame jitter makes the measured ball speed noisy
   (about 10 m/s of noise at 25 fps), which is why its "fast ball" effect almost disappears above.
+
+## E12 does v2 depend on the ball's visibility pattern? (`experiments/e12_visibility_ablation.py`)
+
+v2 + fill + HSMM trained three ways: **full**; **no_seen_share** (without the rolling 0.5/2/5 s
+"ball seen" shares); **no_visibility** (also without "ball seen on this frame" and the fill's
+gap-shape clues). Those are the clues whose meaning comes from the simulator. Tested on E09's
+simulated cross-dataset sets and on the 20 SkillCorner matches (fit on all 10 Metrica + DFL games),
+with their real gaps and with simulator damage added on top. Controlled rule 2 s. spellF1:
+
+| test | full | no_seen_share | no_visibility | baseline |
+|---|---|---|---|---|
+| DFL -> Metrica, sim 35% | 0.615 | **0.619** | 0.613 | 0.259 |
+| DFL -> Metrica, sim 50% | **0.596** | 0.584 | 0.582 | 0.213 |
+| Metrica -> DFL, sim 35% | **0.518** | 0.514 | 0.511 | 0.254 |
+| Metrica -> DFL, sim 50% | **0.506** | 0.505 | 0.493 | 0.222 |
+| **mean, simulated (selection number)** | **0.559** | 0.555 | 0.550 | 0.237 |
+| SkillCorner, real gaps | 0.454 | 0.461 | **0.461** | 0.274 |
+| SkillCorner, real + sim 35% | **0.470** | 0.468 | 0.451 | 0.214 |
+
+On SkillCorner real gaps (full model): 236 predicted possessions vs 248 true; dead-ball share
+0.439 predicted vs 0.464 true; D F1 0.90; team accuracy 0.84.
+
+Reading:
+- **v2 transfers to real gaps.** On a different league, tracker and gap pattern, never used for
+  fitting, it scores 0.45 against the baseline's 0.27 (+0.18; +0.32 on simulated gaps). It does not
+  over-predict dead ball there (0.44 vs 0.46 true).
+- **The visibility clues are not what carries it.** Removing them costs 0.004–0.009 on simulated
+  gaps and changes SkillCorner real gaps by +0.007, both within seed/game noise (~0.01). So the
+  risk that v2 only works because it learned the simulator's visibility habits is small.
+- SkillCorner's absolute scores are lower partly for reasons specific to broadcast data: replays
+  empty 53% of dead frames of players as well as ball (n_players = 0, never seen in training), and
+  its labels are SkillCorner's own automatic output.
+- Decision: **keep the full model** (it wins the selection number); the ablated variants are
+  not better on real gaps by more than noise.

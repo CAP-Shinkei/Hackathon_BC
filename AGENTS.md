@@ -74,8 +74,12 @@ Older pieces kept for comparison: `mtah/v1.py` + `mtah/hmm.py` (HMM on the neare
 Candidate file: `out/submissions/v2_min2s_fill_hsmm.csv`, md5 `856330e93c05226c31509c68ef19be15`,
 official validator OK. Regenerate: `python make_submission.py --model v2 --min-s 2 --fill --decoder hsmm`.
 
-Main open risk: the gaps are simulated. E11 compared the simulator with real gaps (SkillCorner);
-E12/E13 test robustness. Read their entries in `EXPERIMENTS.md` before changing the simulator.
+Main open risk: the gaps are simulated. E11 compared the simulator with real gaps (SkillCorner):
+lengths match, causes differ (real gaps start mostly when the ball is in the air). E12: the
+candidate scores 0.45 on SkillCorner's real gaps (baseline 0.27), and removing the
+simulator-dependent visibility clues changes scores by < 0.01, so it does not live on simulator
+habits. E13 tests false detections and a far-outside-the-pitch rule. Read these entries in
+`EXPERIMENTS.md` before changing the simulator.
 
 ## 5. How to add an experiment
 
