@@ -125,10 +125,38 @@ must be the one in section 4. Elsewhere, point `MTAH_DATA_DIR` and `MTAH_OFFICIA
 - Quirk: the team's USB drive has an antivirus that briefly blocks just-written files
   (`Operation not permitted`); wait a few seconds and retry.
 
-## 7. Ideas not yet done (rough order of expected value)
+## 7. Next steps to improve (in order of expected value)
 
-See `EXPERIMENTS.md` (latest entries) and the team's `PLAN.md`. Main ones: train over a *mix* of
-gap patterns (including "few live gaps, dark stoppages", as in SkillCorner) so the model does not
-depend on one simulator setting; a ball-height gap mechanism (DFL has ball height); a small
-sequence model (GRU) instead of rolling windows; more training games (PFF World Cup 2022, terms
-first); Smart Tagging as evidence without fitted weights.
+Context for all of them: the biggest past gain came from better per-frame evidence (v1 0.28 ->
+v2 0.54); smoothing tweaks gave ~0.01 each. Differences under ~0.04 are noise on the real match, so
+prefer ideas that could move the external benchmark by several hundredths, or that cut a risk.
+
+1. **Team decision first: the controlled-possession threshold** (`--min-s`, now 2 s). It changes the
+   possession count on the match more than any model change (about 320 / 260 / 230 possessions for
+   0 / 2 / 3 s). Decide it by reading CHALLENGE.md ("a player keeps the ball for a few seconds"),
+   never by comparing with the public 5 minutes.
+2. **Train over a mix of gap patterns.** E11 showed the competition's only published gap figure
+   (41% missing) fits two very different pictures: many live-play gaps with the ball visible at
+   stoppages (our simulator), or few live gaps with dark stoppages (SkillCorner). Train on both
+   (e.g. half the damaged copies with `live_missing` 0.05-0.15 and `dead_visible` near 0.2) so the
+   model does not bet on one. Test: E09 sets + SkillCorner real (E12). Expected: about 0 on the
+   simulated benchmark, better on SkillCorner; a robustness gain.
+3. **Ball height in the simulator.** E11: real gaps start 2.7x more often when the ball is above
+   2 m. DFL positions have Z (`dfl.py` reads only X, Y today; delete the dfl caches after changing
+   it). Metrica has no Z: use speed as a proxy there or leave it out. Same test as 2.
+4. **Smart Tagging as evidence without fitted weights.** It was the strongest signal in Álvaro's
+   handoff and we do not use it (except for the 2nd-half kick-off). No external game has Smart
+   Tagging, so nothing can calibrate a weight: use it only in weight-free ways, e.g. tagged set
+   pieces as candidate stoppage boundaries for the HSMM, or a team's tagged attacking phase as a
+   hard constraint that the team cannot be "away" for its whole length. Can only be checked for
+   internal consistency on the match (aggregates), so keep it simple and argue it from football.
+5. **A small sequence model** (GRU/temporal CNN over the 30 per-frame clues) instead of rolling
+   windows + gradient boosting. Same training data and selection. Highest ceiling, most work;
+   ~3k training possessions is small, so keep it tiny and regularised.
+6. **More training games:** PFF FC World Cup 2022 (64 matches, real gaps). Read its terms first; it
+   only gives possession on event frames, so labels need building like `build_gt.py`.
+7. **Small, already set up:** E13 tests false ball detections and the 10 m far-outside rule
+   (`drop_far_outside`); see its entry for the decision.
+
+Parked: whistle detector from the video audio (no external audio to set its threshold; needs
+ffmpeg); a ball detector on the video (GPU, and it must not be trained on this video).
