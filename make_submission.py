@@ -4,6 +4,8 @@
     python make_submission.py --model v2 --min-s 2     # v2 (out/submissions/v2_min2s.csv)
     python make_submission.py --model v2 --min-s 2 --fill --decoder hsmm
                                                        # out/submissions/v2_min2s_fill_hsmm.csv
+    python make_submission.py --model v2 --min-s 2 --fill --decoder hsmm --drop-outside
+                                                       # ..._hsmm_rule.csv (E13)
 
 Needs the Metrica sample data (external_data/metrica_sample_data, or METRICA_SAMPLE_DIR), its
 answer keys (python external/build_gt.py), the competition data (MTAH_DATA_DIR) and a clone of
@@ -28,7 +30,7 @@ from controlled import controlled  # noqa: E402
 from gapsim import Params, damage  # noqa: E402
 from mtah import competition as comp  # noqa: E402
 from mtah import ballfill, features, kickoff, v1, v2  # noqa: E402
-from mtah.evidence import nearest_team  # noqa: E402
+from mtah.evidence import drop_far_outside, nearest_team  # noqa: E402
 from mtah.labels import D, H, X, graded_blocks, runs, write_labels  # noqa: E402
 
 PUBLISHED_KICKOFF_2 = 113742  # FAQ.md; used only as a pipeline check, never as an input
@@ -53,13 +55,15 @@ def v2_features(ball, players, teams, pitch, blocks, fill):
     return Xg, names
 
 
-def v2_training_items(min_s, fill=False):
+def v2_training_items(min_s, fill=False, rule=False):
     """[(game_id, X, y, names)]: every external game damaged at each training gap rate."""
     items = []
     for g in external_games() + dfl_games():
         for i, rate in enumerate(v1.GAP_RATES):
             ball, players = damage(g["ball"], g["players"], g["teams"], g["gt"], g["pitch"],
                                    Params(live_missing=rate), seed=100 + i)
+            if rule:
+                ball = drop_far_outside(ball, g["pitch"])
             Xg, names = v2_features(ball, players, g["teams"], g["pitch"],
                                     graded_blocks(g["gt"]), fill)
             items.append((g["name"], Xg, controlled(g["gt"], min_s), names))
@@ -73,14 +77,17 @@ def main():
                         help="controlled-possession rule for the external labels (v2 only)")
     parser.add_argument("--fill", action="store_true",
                         help="add straight-line ball-fill features (v2 only)")
+    parser.add_argument("--drop-outside", action="store_true",
+                        help="treat a ball more than 10 m beyond the lines as not seen (E13)")
     parser.add_argument("--decoder", choices=("viterbi", "hsmm"), default="viterbi",
                         help="final decoding step (v2 only)")
     parser.add_argument("--out")
     args = parser.parse_args()
     if args.out is None:
-        name = "v1" if args.model == "v1" else "v2_min{:g}s{}{}".format(
+        name = "v1" if args.model == "v1" else "v2_min{:g}s{}{}{}".format(
             args.min_s, "_fill" if args.fill else "",
-            "_hsmm" if args.decoder == "hsmm" else "")
+            "_hsmm" if args.decoder == "hsmm" else "",
+            "_rule" if args.drop_outside else "")
         args.out = os.path.join(HERE, "out", "submissions", name + ".csv")
 
     if args.model == "v1":
@@ -91,7 +98,7 @@ def main():
     else:
         print("fitting v2 on the damaged Metrica + DFL games, controlled rule {} s ...".format(
             args.min_s), flush=True)
-        items = v2_training_items(args.min_s, args.fill)
+        items = v2_training_items(args.min_s, args.fill, args.drop_outside)
         model = v2.fit(items)
         print("  temperature {}  min_spell {} frames  out-of-fold external spellF1 {:.4f}".format(
             model["temperature"], model["min_spell"], model["oof_spell_f1"]))
@@ -102,6 +109,11 @@ def main():
 
     print("loading the competition tracking ...", flush=True)
     ball, players, teams = comp.load_tracking()
+    if args.drop_outside:
+        kept = ball
+        ball = drop_far_outside(ball, comp.PITCH)
+        print("  far-outside rule: {} ball frames treated as not seen".format(
+            int(np.sum(np.isnan(ball[:, 0]) & ~np.isnan(kept[:, 0])))))
     k2, how = second_half_kickoff(ball, comp.load_smart_tagging())
     print("  2nd-half kick-off: frame {} ({}); published {} -> difference {} frames".format(
         k2, how, PUBLISHED_KICKOFF_2, k2 - PUBLISHED_KICKOFF_2))
