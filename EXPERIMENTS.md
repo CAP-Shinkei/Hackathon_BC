@@ -252,3 +252,32 @@ Reading:
   its labels are SkillCorner's own automatic output.
 - Decision: **keep the full model** (it wins the selection number); the ablated variants are
   not better on real gaps by more than noise.
+
+## E13 false ball detections, centre-spot blind spot, far-outside rule (`experiments/e13_artefacts.py`)
+
+Two artefacts seen in the competition tracking's aggregates were added to `gapsim.Params` (off by
+default): bursts of false ball detections anywhere in the camera's view (pitch + 35 m), and no ball
+within 3 m of the centre spot. Rule `mtah.evidence.drop_far_outside`: a ball more than 10 m beyond
+the lines is treated as not seen (FIFA stadium recommendations: ~10 m of run-off around the pitch).
+Models: trained on plain damage (std) or with artefacts at 5 bursts/min (art), each with and
+without the rule (applied to training and test). Fit on one dataset, scored on the other.
+Mean spellF1 over the four cells (DFL->Metrica, Metrica->DFL; two damage settings each):
+
+| model | plain damage, 35% / 50% | artefacts 2 and 10 bursts/min (35%) | of which 10/min |
+|---|---|---|---|
+| std (current) | **0.559** | 0.521 | 0.485 |
+| std + rule | **0.559** (identical) | 0.544 | 0.518 |
+| art | 0.549 | 0.565 | 0.555 |
+| art + rule | 0.555 | **0.568** | **0.560** |
+
+Reading:
+- **The rule is free.** Without false detections it changes nothing (identical scores); with them
+  it recovers +0.02 on average and +0.03 at 10 bursts/min. Without it, false detections inside the
+  pitch and far outside push the std model to under-predict dead ball (0.27 vs 0.45 true at
+  10/min on DFL).
+- **Training with artefacts** helps more when they are present (+0.04 to +0.07) but costs ~0.004
+  without them. Whether it pays off depends on how often the competition tracking has false
+  detections, which we have not measured (measuring gap statistics on the ATD is an open question
+  to the organisers).
+- Decision: **adopt the rule** (`make_submission.py --drop-outside`; weakly better everywhere).
+  Artefact training: team decision, pending the organisers' answer.

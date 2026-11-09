@@ -46,10 +46,10 @@ export MTAH_DATA_DIR=/path/to/data            # contains tactical/BAR-ATH_tactic
 # Clone of the official challenge repository, for the official scorer:
 export MTAH_OFFICIAL_REPO=/path/to/more-than-a-hack-2027
 
-python make_submission.py --model v2 --min-s 2 --fill --decoder hsmm
-# -> out/submissions/v2_min2s_fill_hsmm.csv
-python "$MTAH_OFFICIAL_REPO/evaluation/validate_submission.py" out/submissions/v2_min2s_fill_hsmm.csv
-md5sum out/submissions/v2_min2s_fill_hsmm.csv  # 856330e93c05226c31509c68ef19be15
+python make_submission.py --model v2 --min-s 2 --fill --decoder hsmm --drop-outside
+# -> out/submissions/v2_min2s_fill_hsmm_rule.csv
+python "$MTAH_OFFICIAL_REPO/evaluation/validate_submission.py" out/submissions/v2_min2s_fill_hsmm_rule.csv
+md5sum out/submissions/v2_min2s_fill_hsmm_rule.csv  # cf68da6c29f3bad45d58fdcada833a09
 ```
 
 The run is deterministic (fixed seeds). Data locations can be overridden with `METRICA_SAMPLE_DIR`,
