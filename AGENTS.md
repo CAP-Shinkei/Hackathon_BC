@@ -99,6 +99,21 @@ habits. E13 tests false detections and a far-outside-the-pitch rule. Read these 
 
 ## 6. Running things
 
+Setup on a new machine. The code finds everything relative to a team folder that holds this
+repository next to the data:
+
+```
+team_folder/
+  repo/            this repository
+  data/            the competition bundle from the organisers' Drive (tactical/BAR-ATH_tactical_*)
+  official_repo/   git clone https://github.com/metrica-sports/more-than-a-hack-2027 official_repo
+  external_data/   created by: bash repo/external/fetch_data.sh --with-skillcorner  (~4.5 GB)
+```
+
+Then `pip install -r requirements.txt` and check with
+`python repo/make_submission.py --model v2 --min-s 2 --fill --decoder hsmm`: the output's md5
+must be the one in section 4. Elsewhere, point `MTAH_DATA_DIR` and `MTAH_OFFICIAL_REPO` at the data.
+
 - `pip install -r requirements.txt` (Python 3.12). `bash external/fetch_data.sh` fetches the open
   data into `../external_data` (`--with-skillcorner` for the experiment-only dataset).
 - Environment: `MTAH_DATA_DIR` (competition bundle), `MTAH_OFFICIAL_REPO` (official repo clone,
