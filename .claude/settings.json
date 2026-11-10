@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(//Users/pablogallo/Downloads/More Than A Hack 2027 - Initial Challenge - Dataset/**)",
+      "Read(//Users/pablogallo/Downloads/mtah-possession/data/**)"
+    ]
+  }
+}

@@ -1,0 +1,9 @@
+numpy
+pandas
+scipy
+scikit-learn
+kloppy==3.18.0
+lxml
+requests
+pytest
+pytest-cov

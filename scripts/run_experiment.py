@@ -1,0 +1,45 @@
+"""Run named experiment configs through the leave-one-game-out protocol and save the rows.
+
+    python scripts/run_experiment.py e16_base [more names...]
+"""
+import json
+import os
+import sys
+from dataclasses import replace
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
+
+from mtah import experiment, labels  # noqa: E402
+from mtah.experiment import Config  # noqa: E402
+from mtah.external import dfl, metrica  # noqa: E402
+
+CONTROLLED_S = 2.0
+BASE = Config(name="e16_base")
+CONFIGS = {c.name: c for c in (
+    BASE,
+    replace(BASE, name="e16_t05", temperature=0.5),
+    replace(BASE, name="e16_t2", temperature=2.0),
+    replace(BASE, name="e16_t4", temperature=4.0),
+)}
+
+
+def load_games(min_s=CONTROLLED_S):
+    games = [dfl.load(g) for g in dfl.GAME_IDS] + [metrica.load(g) for g in metrica.GAME_IDS]
+    return [g.with_labels(labels.controlled(g.labels, g.blocks, min_s)) for g in games]
+
+
+def main(names):
+    games = load_games()
+    os.makedirs(os.path.join(ROOT, "out", "results"), exist_ok=True)
+    for name in names:
+        rows = experiment.run(games, CONFIGS[name])
+        summary = experiment.summarise(rows)
+        with open(os.path.join(ROOT, "out", "results", name + ".json"), "w") as handle:
+            json.dump({"rows": rows, "summary": summary}, handle, indent=1)
+        print("== {}  spellF1 {:.4f}  macroF1 {:.4f}  D-F1 {:.4f}".format(
+            name, summary["spell_f1"], summary["macro_f1"], summary["d_f1"]), flush=True)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
