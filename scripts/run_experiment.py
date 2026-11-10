@@ -15,12 +15,20 @@ from mtah.experiment import Config  # noqa: E402
 from mtah.external import dfl, metrica  # noqa: E402
 
 CONTROLLED_S = 2.0
+BENCH = ("random35", "mixed41_art", "dark50")
 BASE = Config(name="e16_base")
 CONFIGS = {c.name: c for c in (
     BASE,
     replace(BASE, name="e16_t05", temperature=0.5),
     replace(BASE, name="e16_t2", temperature=2.0),
     replace(BASE, name="e16_t4", temperature=4.0),
+    replace(BASE, name="e17_old_train", temperature=4.0, eval_regimes=BENCH),
+    replace(BASE, name="e17_mix_train", temperature=4.0, eval_regimes=BENCH,
+            train_regimes=("random35", "mixed41", "mixed41_art", "dark50")),
+    replace(BASE, name="e17_mix_t8", temperature=8.0, eval_regimes=BENCH,
+            train_regimes=("random35", "mixed41", "mixed41_art", "dark50")),
+    replace(BASE, name="e17_mix_t2", temperature=2.0, eval_regimes=BENCH,
+            train_regimes=("random35", "mixed41", "mixed41_art", "dark50")),
 )}
 
 
@@ -37,6 +45,10 @@ def main(names):
         summary = experiment.summarise(rows)
         with open(os.path.join(ROOT, "out", "results", name + ".json"), "w") as handle:
             json.dump({"rows": rows, "summary": summary}, handle, indent=1)
+        by_regime = {r: sum(x["spell_f1"] for x in rows if x["regime"] == r)
+                     / max(1, sum(1 for x in rows if x["regime"] == r))
+                     for r in CONFIGS[name].eval_regimes}
+        print("   by regime: " + "  ".join("{} {:.3f}".format(*kv) for kv in by_regime.items()))
         print("== {}  spellF1 {:.4f}  macroF1 {:.4f}  D-F1 {:.4f}".format(
             name, summary["spell_f1"], summary["macro_f1"], summary["d_f1"]), flush=True)
 

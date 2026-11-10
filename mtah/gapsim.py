@@ -56,6 +56,10 @@ REGIMES = {
     "mixed41": _MIXED41,
     "mixed41_art": replace(_MIXED41, name="mixed41_art", jitter_m=0.3,
                            false_rate=0.01, player_drop=0.05),
+    # Stoppages mostly unseen: the opposite assumption to random35/50, where every dead ball
+    # stays visible. The real regime is unknown, so models are judged under both.
+    "dark50": replace(_MIXED41, name="dark50", rate=0.50, dead_hidden=0.7, jitter_m=0.3,
+                      false_rate=0.01, player_drop=0.05),
 }
 
 
