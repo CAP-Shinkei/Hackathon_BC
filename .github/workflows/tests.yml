@@ -14,6 +14,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -21,7 +23,13 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt ruff==0.8.4
       - name: Fetch the official scorer (code only, no match data)
-        run: git clone --depth 1 https://github.com/metrica-sports/more-than-a-hack-2027 official
+        # Pinned: the suite imports this code, so it must not change under us.
+        run: |
+          git init -q official
+          git -C official fetch -q --depth 1 https://github.com/metrica-sports/more-than-a-hack-2027 "$OFFICIAL_SHA"
+          git -C official checkout -q FETCH_HEAD
+        env:
+          OFFICIAL_SHA: f8f2629ff1e0985f81d7e59d8413678514ee1530
       - name: Lint
         run: ruff check mtah scripts tests
       - name: Tests
