@@ -88,9 +88,12 @@ Selection number = mean held-out spellF1 over E10's four cells (`experiments/e25
 46% of graded frames, home 60.2% of possession time). Regenerate (about 30 minutes):
 `python make_submission.py --model v2 --min-s 2 --fill --decoder hsmm --drop-outside --regimes mix --context --turnover`.
 
-**Candidate 2** (same plus `--stack model/sequence_mix_ctx_turn.pt`): see the last section of
-`EXPERIMENTS.md` for its md5. It is not better on the benchmark (+0.0003) and a neural network's
-arithmetic can differ in the last bits between machines, so candidate 1 is the one to submit
+**Candidate 2** (the same plus `--stack model/sequence_mix_ctx_turn.pt`, weights written by
+`train_sequence.py`): `out/submissions/v2_min2s_fill_hsmm_rule_mix_ctx_turn_nn.csv`, md5
+`a0379735c47768f1c5867e531604c049`, validator OK (282 possessions, mean 12.1 s). On the selection
+number it equals candidate 1 (+0.0003); out-of-fold over all 10 games it is +0.011. A neural
+network's arithmetic can differ in the last bits between machines (measured: 2e-8 between one
+and six threads), and the rules ask for the exact file, so candidate 1 is the one to submit
 unless the team decides otherwise.
 
 Previous candidate: `v2_min2s_fill_hsmm_rule.csv`, md5 `cf68da6c29f3bad45d58fdcada833a09`; the

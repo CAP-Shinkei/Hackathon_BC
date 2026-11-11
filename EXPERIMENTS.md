@@ -424,3 +424,33 @@ Reading:
 Decision: **not adopted as the main candidate.** Kept as a second file at Manuel's request (see
 the submissions below), with the caveat that a neural network's arithmetic can differ in the last
 bits between machines, while the rules ask for the exact file.
+
+## Submissions of 2026-11-11
+
+**Candidate 1** (`python make_submission.py --model v2 --min-s 2 --fill --decoder hsmm --drop-outside --regimes mix --context --turnover`)
+
+- Fit on all 10 damaged external games, five regimes each: out-of-fold external spellF1 0.7136
+  (HSMM temperature 0.3). The E13 candidate at the same step: 0.5745.
+- Output: 261 possessions, mean 13.2 s; graded frames H 0.326 / A 0.215 / D 0.459; home 0.602.
+- Official validator: OK. md5 0f7c533b825f238699e08df437a5a590.
+- With the same code the old command regenerated the E13 candidate byte for byte (cf68da6c...).
+
+**Candidate 2** (the same command plus `--stack model/sequence_mix_ctx_turn.pt`; PyTorch)
+
+- `python train_sequence.py` (1 h 7 min here): three fold models of the sequence model on all 10
+  games; weights md5 882a2bccdb86a0f021ed432e8983e051. Out-of-fold external spellF1 on those
+  games: classifier 0.7136, sequence model 0.7165, stack 0.7249 (HSMM temperature 0.5). This
+  +0.011 mixes both datasets in training, unlike the selection number (+0.0003), and fits E27's
+  reading that the sequence model gets better with more games.
+- Output: 282 possessions, mean 12.1 s; graded frames H 0.324 / A 0.212 / D 0.464; home 0.605.
+- Official validator: OK. md5 a0379735c47768f1c5867e531604c049.
+- Against candidate 1 on the match: 96.6% of graded frames agree, cross spellF1 0.829.
+- Reproducibility: with one thread (which `make_submission.py` sets) the sequence model's output
+  on the match is bit-identical from run to run on this machine; with six threads it differs by
+  up to 2e-8. Another CPU may differ in the same way, and whether a difference of that size can
+  move a label was not tested. The file was generated once; it was not regenerated end to end a
+  second time. Candidate 1 has none of this risk.
+
+Which to submit: the selection number does not separate them (0.6742 / 0.6745). Candidate 1 is
+the recommendation because the rules ask for the exact file; candidate 2 is the alternative if
+the team prefers the out-of-fold +0.011.
