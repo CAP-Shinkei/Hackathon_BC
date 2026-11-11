@@ -58,7 +58,12 @@ def _featurise_damaged(match, regime_name, seed, drop_outside, module):
     return module.featurise(damaged)
 
 
-def _training_features(matches, train_regimes, train_seed, drop_outside, module):
+def _featurise_as_loaded(match, drop_outside, module):
+    return module.featurise(rules.drop_far_outside(match) if drop_outside else match)
+
+
+def _training_features(matches, real_matches, train_regimes, train_seed, drop_outside, module):
+    """Same order as mtah.experiment.fit_fold: damaged clean games first, then real-gap games."""
     X_list, y_list, blocks_list, names = [], [], [], None
     for match in matches:
         for k, regime in enumerate(train_regimes):
@@ -66,6 +71,11 @@ def _training_features(matches, train_regimes, train_seed, drop_outside, module)
             X_list.append(X)
             y_list.append(match.labels)
             blocks_list.append(match.blocks)
+    for match in real_matches:
+        X, names = _featurise_as_loaded(match, drop_outside, module)
+        X_list.append(X)
+        y_list.append(match.labels)
+        blocks_list.append(match.blocks)
     return X_list, y_list, blocks_list, names
 
 
@@ -77,16 +87,20 @@ def _fit_models(X_list, y_list, blocks_list, swap, params, model_seeds):
 
 
 def train_bundle(matches, train_regimes, train_seed, model_seeds, params, temperature, step,
-                 min_frames, drop_outside=True, feature_module="features"):
-    """Fit one model per seed on every match under every training regime, with priors from labels."""
-    _check_training_inputs(matches, train_regimes, model_seeds)
+                 min_frames, drop_outside=True, feature_module="features", real_matches=()):
+    """Fit one model per seed on every match under every training regime, with priors from labels.
+
+    `real_matches` are games whose tracking already has genuine gaps; they are used as loaded.
+    """
+    real_matches = tuple(real_matches)
+    _check_training_inputs(tuple(matches) + real_matches, train_regimes, model_seeds)
     module = _feature_module(feature_module)
     X_list, y_list, blocks_list, names = _training_features(
-        matches, train_regimes, train_seed, drop_outside, module)
+        matches, real_matches, train_regimes, train_seed, drop_outside, module)
     swap = module.swap_index(names)
     fitted = _fit_models(X_list, y_list, blocks_list, swap, params, model_seeds)
-    labels = [match.labels for match in matches]
-    blocks = [match.blocks for match in matches]
+    labels = [match.labels for match in tuple(matches) + real_matches]
+    blocks = [match.blocks for match in tuple(matches) + real_matches]
     return Bundle(
         models=fitted,
         names=tuple(names),

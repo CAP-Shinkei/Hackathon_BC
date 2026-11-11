@@ -109,3 +109,29 @@ sea que no eran solo "conocer el examen". El candidato supera el 0,454 que tení
 esta misma clase de prueba, aunque la selección de partidos puede no ser idéntica.
 **Límite**: sigue habiendo una caída grande de simulado (0,70) a real (0,48). SkillCorner solo ve
 4–5 jugadores por equipo, así que parte de esa caída no aplica a una cámara táctica.
+
+## E21 — Media de 5 semillas
+
+Sobre `e17_mix_train`: 0,6752 frente a 0,6743 (+0,001, mejora en 5 de 10 partidos).
+**Decisión**: no se adopta. Es ruido y multiplica por cinco el entrenamiento.
+
+## E24 — Entrenar también con huecos reales (SkillCorner)
+
+Base `e18_v2` más 12 partidos de SkillCorner tal como vienen (los que no se usan para validar),
+añadidos a cada entrenamiento.
+
+| Config | Simulado (10 partidos) | macroF1 | Real (8 partidos SkillCorner) | macroF1 real |
+|---|---|---|---|---|
+| e18_v2 | 0,6972 | 0,8915 | 0,4824 | 0,8460 |
+| e24_v2_real | 0,6912 | 0,8902 | **0,5957** | **0,8857** |
+
+Emparejado en simulado: −0,006 de media, mejora en 2 de 10 partidos.
+
+**Lectura**: gran ganancia con huecos reales (+0,113) a cambio de una pérdida pequeña y
+consistente en simulado (−0,006, por debajo del ruido del protocolo pero en 8 de 10 partidos).
+Parte de la ganancia es aprender el estilo de SkillCorner (mismo proveedor y liga que la
+validación), así que 0,596 sobreestima lo que se ganaría en otro tracking.
+**Decisión**: adoptado, **como excepción razonada a la regla de adopción** (que pedía cero
+retroceso en simulado). Motivo: no sabemos a cuál de los dos supuestos se parece BAR-ATH; el
+único dato publicado (balón ausente en el 41 % de los frames) coincide con SkillCorner (≈ 40 %),
+y el coste en el peor caso (−0,006) es veinte veces menor que la ganancia en el otro.

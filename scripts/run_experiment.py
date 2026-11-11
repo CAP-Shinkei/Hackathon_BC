@@ -12,9 +12,11 @@ sys.path.insert(0, ROOT)
 
 from mtah import experiment, features, features_v2, labels  # noqa: E402
 from mtah.experiment import Config  # noqa: E402
-from mtah.external import dfl, metrica  # noqa: E402
+from mtah.external import dfl, metrica, skillcorner  # noqa: E402
 
 CONTROLLED_S = 2.0
+N_REAL_VALIDATION = 8  # SkillCorner games never trained on
+N_REAL_TRAIN = 12
 BENCH = ("random35", "mixed41_art", "dark50")
 MIX = ("random35", "mixed41", "mixed41_art", "dark50")
 BASE = Config(name="e16_base")
@@ -41,6 +43,10 @@ CONFIGS = {c.name: c for c in (
     replace(BASE, name="e19_t6", temperature=6.0, eval_regimes=BENCH, train_regimes=MIX),
     replace(BASE, name="e19_step3", temperature=4.0, eval_regimes=BENCH, train_regimes=MIX,
             step=3),
+    replace(BASE, name="e24_v2_real", temperature=4.0, eval_regimes=BENCH, feature_version="v2",
+            train_regimes=MIX, real_games=N_REAL_TRAIN),
+    replace(BASE, name="e22_clean", temperature=4.0, eval_regimes=BENCH, feature_version="v2",
+            train_regimes=MIX, real_games=N_REAL_TRAIN, clean_ball=True),
     replace(BASE, name="e21_seeds5", temperature=4.0, eval_regimes=BENCH, train_regimes=MIX,
             model_seeds=(0, 1, 2, 3, 4)),
 )}
@@ -56,11 +62,22 @@ def load_games(min_s=CONTROLLED_S):
     return [g.with_labels(labels.controlled(g.labels, g.blocks, min_s)) for g in games]
 
 
+def load_real(game_ids, min_s=CONTROLLED_S):
+    games = [skillcorner.load(g) for g in game_ids]
+    return [g.with_labels(labels.controlled(g.labels, g.blocks, min_s)) for g in games]
+
+
+def real_train_games(cfg):
+    ids = skillcorner.GAME_IDS[N_REAL_VALIDATION:N_REAL_VALIDATION + cfg.real_games]
+    return load_real(ids)
+
+
 def main(names):
     games = load_games()
     os.makedirs(os.path.join(ROOT, "out", "results"), exist_ok=True)
     for name in names:
-        rows = experiment.run(games, CONFIGS[name], feature_fn(CONFIGS[name]))
+        rows = experiment.run(games, CONFIGS[name], feature_fn(CONFIGS[name]),
+                              real=real_train_games(CONFIGS[name]))
         summary = experiment.summarise(rows)
         with open(os.path.join(ROOT, "out", "results", name + ".json"), "w") as handle:
             json.dump({"rows": rows, "summary": summary}, handle, indent=1)

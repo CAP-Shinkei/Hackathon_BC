@@ -11,7 +11,7 @@ from dataclasses import asdict, dataclass, field
 
 import numpy as np
 
-from mtah import decode, features, gapsim, model, rules
+from mtah import ballclean, decode, features, gapsim, model, rules
 from mtah.scoring import score
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -32,19 +32,22 @@ class Config:
     min_frames: int = 0
     drop_outside: bool = True
     feature_version: str = "v1"
+    real_games: int = 0  # real-gap games added to every training fold, as loaded
+    clean_ball: bool = False  # drop physically implausible ball detections before featurising
 
     def model_key(self):
         """Everything that changes the fitted probabilities; decoder settings are left out."""
         keep = {k: v for k, v in asdict(self).items()
                 if k in ("train_regimes", "train_seed", "model_seeds", "params",
-                         "drop_outside", "feature_version")}
+                         "drop_outside", "feature_version")
+                or (k in ("real_games", "clean_ball") and v)}
         return hashlib.md5(json.dumps(keep, sort_keys=True).encode()).hexdigest()[:10]
 
 
 def featurise_cached(match, regime_name, seed, cfg, featurise=features.featurise):
     """(X, names) of one damaged game. `regime_name` None means the game as loaded."""
     tag = "{}_{}_{}_{}_{}".format(match.game_id, regime_name, seed, cfg.feature_version,
-                                  int(cfg.drop_outside))
+                                  int(cfg.drop_outside)) + ("_clean" if cfg.clean_ball else "")
     path = os.path.join(CACHE, "features", tag + ".npz")
     if os.path.exists(path):
         with np.load(path, allow_pickle=False) as data:
@@ -53,29 +56,32 @@ def featurise_cached(match, regime_name, seed, cfg, featurise=features.featurise
         match, gapsim.REGIMES[regime_name], seed)
     if cfg.drop_outside:
         damaged = rules.drop_far_outside(damaged)
+    if cfg.clean_ball:
+        damaged = ballclean.drop_implausible(damaged)
     X, names = featurise(damaged)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     np.savez_compressed(path, X=X, names=np.array(names))
     return X, names
 
 
-def fit_fold(train_matches, cfg, featurise=features.featurise):
-    """One model per seed, trained on every training game under every training regime."""
-    X_list, y_list, blocks_list, names = [], [], [], None
-    for match in train_matches:
-        for k, regime in enumerate(cfg.train_regimes):
-            X, names = featurise_cached(match, regime, cfg.train_seed + k, cfg, featurise)
-            X_list.append(X)
-            y_list.append(match.labels)
-            blocks_list.append(match.blocks)
-    swap = features.swap_index(names)
+def fit_fold(train_matches, cfg, featurise=features.featurise, real=()):
+    """One model per seed: every training game under every training regime, plus `real` games
+    (tracking with genuine gaps) exactly as loaded."""
+    jobs = [(match, regime, cfg.train_seed + k) for match in train_matches
+            for k, regime in enumerate(cfg.train_regimes)] + [(match, None, 0) for match in real]
+    featurised = [featurise_cached(match, regime, seed, cfg, featurise)
+                  for match, regime, seed in jobs]
+    X_list = [X for X, _ in featurised]
+    y_list = [match.labels for match, _, _ in jobs]
+    blocks_list = [match.blocks for match, _, _ in jobs]
+    swap = features.swap_index(featurised[0][1])
     models = [model.fit(X_list, y_list, blocks_list, swap,
                         model.Params(**{**asdict(cfg.params), "seed": seed}))
               for seed in cfg.model_seeds]
     return models, swap
 
 
-def fold_proba(held_out, train_matches, cfg, featurise=features.featurise):
+def fold_proba(held_out, train_matches, cfg, featurise=features.featurise, real=()):
     """{(regime, seed): P[T,3]} for the held-out game, cached per model key."""
     folder = os.path.join(CACHE, "proba", cfg.model_key())
     wanted = [(r, s) for r in cfg.eval_regimes for s in cfg.eval_seeds]
@@ -83,7 +89,7 @@ def fold_proba(held_out, train_matches, cfg, featurise=features.featurise):
              for key in wanted}
     if all(os.path.exists(p) for p in paths.values()):
         return {key: np.load(p) for key, p in paths.items()}
-    models, swap = fit_fold(train_matches, cfg, featurise)
+    models, swap = fit_fold(train_matches, cfg, featurise, real)
     os.makedirs(folder, exist_ok=True)
     out = {}
     for key in wanted:
@@ -103,13 +109,15 @@ def decode_and_score(proba, held_out, train_matches, cfg):
     return score(held_out.labels, codes, blocks=held_out.blocks)
 
 
-def run(matches, cfg, featurise=features.featurise, log=print):
+def run(matches, cfg, featurise=features.featurise, log=print, real=()):
     """Rows of {game, regime, seed, spell_f1, macro_f1, ...}, one per held-out evaluation."""
+    if len(real) != cfg.real_games:
+        raise ValueError("config asks for {} real games, got {}".format(cfg.real_games, len(real)))
     rows = []
     for held_out in matches:
         train = [m for m in matches if m.game_id != held_out.game_id]
-        for (regime, seed), proba in fold_proba(held_out, train, cfg, featurise).items():
-            result = decode_and_score(proba, held_out, train, cfg)
+        for (regime, seed), proba in fold_proba(held_out, train, cfg, featurise, real).items():
+            result = decode_and_score(proba, held_out, train + list(real), cfg)
             rows.append({"game": held_out.game_id, "regime": regime, "seed": seed, **result})
         done = [r for r in rows if r["game"] == held_out.game_id]
         log("{:<16} {:<14} spellF1 {:.3f}  macroF1 {:.3f}".format(
