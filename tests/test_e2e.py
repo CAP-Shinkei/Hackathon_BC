@@ -230,3 +230,27 @@ def test_kickoff_frames_must_match_block_count(pipeline):
 
     with pytest.raises(ValueError, match="kickoff"):
         submission.predict_codes(pipeline.bundle, match, kickoff_frames=(0,))
+
+
+def test_real_matches_change_the_model_and_feed_the_priors():
+    train = [make_match("S1", 11)]
+    real = [gapsim.damage(make_match("R1", 31), gapsim.REGIMES["random35"], 3)]
+
+    without = submission.train_bundle(train, ("random35",), 1, (0,), TRAIN_PARAMS,
+                                      TEMPERATURE, STEP, 0)
+    with_real = submission.train_bundle(train, ("random35",), 1, (0,), TRAIN_PARAMS,
+                                        TEMPERATURE, STEP, 0, real_matches=real)
+
+    assert with_real.names == without.names
+    assert not np.array_equal(with_real.dur_logpmf, without.dur_logpmf)
+    held_out = gapsim.damage(make_match("T1", 41), gapsim.REGIMES["random35"], 5)
+    assert not np.array_equal(submission.predict_codes(with_real, held_out),
+                              submission.predict_codes(without, held_out))
+
+
+def test_real_matches_need_labels_too():
+    unlabelled = dataclasses.replace(make_match("U", 21), labels=None)
+
+    with pytest.raises(ValueError, match="labels"):
+        submission.train_bundle([make_match("S1", 11)], ("random35",), 1, (0,), TRAIN_PARAMS,
+                                TEMPERATURE, STEP, 0, real_matches=[unlabelled])

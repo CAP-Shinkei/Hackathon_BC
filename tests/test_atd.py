@@ -145,3 +145,18 @@ def test_load_atd_reads_200000_lines_of_46_slots_within_time_budget(tmp_path):
 
     assert loaded.home_xy.shape == (SPEED_TEST_FRAMES, SPEED_TEST_SLOTS // 2, 2)
     assert elapsed < SPEED_TEST_SECONDS
+
+
+def test_load_atd_warns_about_truncated_lines_but_not_blank_ones(tmp_path):
+    match = make_match()
+    meta_path, raw_path = export_atd(match, tmp_path, "synthetic")
+    lines = Path(raw_path).read_text().splitlines(keepends=True)
+    lines[1] = lines[1].rsplit(":", 1)[0] + "\n"
+    truncated_raw = tmp_path / "truncated_atd.txt"
+    truncated_raw.write_text("".join(lines) + "\n\n")
+
+    with pytest.warns(UserWarning, match="1 non-empty lines"):
+        loaded = load_atd(meta_path, truncated_raw, n_frames=match.n_frames, pitch=PITCH,
+                          blocks=BLOCKS)
+
+    assert np.isnan(loaded.ball_xy[1]).all()

@@ -56,6 +56,9 @@ def _md5(path):
     return digest.hexdigest()
 
 
+DRAFT_SUFFIX = ".unvalidated"  # a file only takes its final name once it has validated
+
+
 def _aggregates(table, n_frames, out_path):
     codes = pm.label_codes(table)
     counts = {name: int((codes == index).sum()) for index, name in enumerate(COUNT_NAMES)}
@@ -74,11 +77,13 @@ def build(data_dir, bundle_path, out_path, game, games_module):
     bundle = submission.load_bundle(bundle_path)
     codes = submission.predict_codes(bundle, match,
                                      kickoff_frames=_kickoff_frames(games_module, config, blocks))
-    submission.write_csv(codes, out_path)
-    table = pm.read_label_csv(out_path)
+    draft_path = out_path + DRAFT_SUFFIX
+    submission.write_csv(codes, draft_path)
+    table = pm.read_label_csv(draft_path)
     reason = pm.validate_submission(table, n_frames)
     if reason:
-        raise ValueError("submission is invalid: {}".format(reason))
+        raise ValueError("submission is invalid ({}); left at {}".format(reason, draft_path))
+    os.replace(draft_path, out_path)
     return _aggregates(table, n_frames, out_path)
 
 

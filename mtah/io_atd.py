@@ -11,6 +11,7 @@ module and the reference baseline can never disagree about which slot is which t
 """
 import os
 import sys
+import warnings
 
 import numpy as np
 
@@ -60,12 +61,18 @@ def load_atd(meta_path, raw_path, n_frames, pitch, blocks, game_id="match"):
 def _read_frames(raw_path, n_frames, n_slots):
     """float32 [n_frames, n_slots + 1, 3]: every slot's x, y, speed, then the ball last."""
     frames = np.full((n_frames, n_slots + 1, VALUES_PER_GROUP), np.nan, dtype=np.float32)
+    skipped = 0
     with open(raw_path) as handle:
         for line_no, line in enumerate(handle, start=1):
             parsed = _parse_line(line, n_slots, n_frames, line_no)
             if parsed is not None:
                 index, values = parsed
                 frames[index] = values
+            elif line.strip():
+                skipped += 1
+    if skipped:
+        warnings.warn("{}: {} non-empty lines are not frame records and were skipped".format(
+            raw_path, skipped))
     return frames
 
 

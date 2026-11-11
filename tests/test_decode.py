@@ -329,3 +329,11 @@ def test_dead_before_rejects_span_outside_the_sequence():
     # Act / Assert
     with pytest.raises(ValueError):
         dead_before(codes, start=5, stop=50)
+
+
+def test_decode_refuses_non_finite_probabilities():
+    proba = np.tile(np.array([0.1, 0.8, 0.1]), (10, 1))
+    proba[4] = np.nan
+
+    with pytest.raises(ValueError, match="non-finite"):
+        hsmm_decode(proba, np.zeros((3, 4)), np.zeros((3, 3)))

@@ -41,7 +41,10 @@ def _parse_args(argv):
     parser.add_argument("--real-games", type=int, default=DEFAULT_REAL_GAMES,
                         help="SkillCorner games (real gaps) to add, taken from the end of the list")
     parser.add_argument("--out", default=DEFAULT_OUT, help="where to save the bundle")
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if not 0 <= args.real_games <= len(skillcorner.GAME_IDS):
+        parser.error("--real-games must be between 0 and {}".format(len(skillcorner.GAME_IDS)))
+    return args
 
 
 def main(argv=None):

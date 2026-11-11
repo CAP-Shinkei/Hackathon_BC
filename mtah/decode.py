@@ -41,6 +41,9 @@ def _log_proba(proba):
         raise ValueError("proba must have shape [T, 3], got {}".format(values.shape))
     if len(values) == 0:
         raise ValueError("proba must contain at least one frame")
+    if not np.isfinite(values).all():
+        raise ValueError("proba holds {} non-finite values".format(
+            int((~np.isfinite(values)).sum())))
     return np.log(np.clip(values, PROBA_FLOOR, None))
 
 

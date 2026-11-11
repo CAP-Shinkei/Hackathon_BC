@@ -1,5 +1,10 @@
 """Tests for the Metrica sample-game loader: pure label rules first, then the real data if present."""
+import contextlib
+import io
+import json
 import os
+from dataclasses import dataclass
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
@@ -13,7 +18,7 @@ from mtah.external.metrica import (
     RAW_FILES,
     labels_from_events,
 )
-from mtah.schema import A, D, FPS, H
+from mtah.schema import A, D, FPS, H, Match
 
 REAL_DATA_PRESENT = os.path.isdir(DEFAULT_DATA_DIR)
 
@@ -249,3 +254,279 @@ def test_metrica_1_loads_with_shapes_fps_length_and_labels():
     assert set(np.unique(match.labels).tolist()) <= {H, A, D}
     dead_share = float(np.mean(match.labels == D))
     assert 0.2 < dead_share < 0.6
+
+
+def _events_with(*rows, period_none=False):
+    events = _events(*rows)
+    if period_none:
+        events["Period"] = None
+    return events
+
+
+def test_labels_reject_negative_frame_count():
+    # Arrange
+    events = _events(("Home", "PASS", "", 1, 1, 1))
+
+    # Act / Assert
+    with pytest.raises(ValueError, match="non-negative"):
+        labels_from_events(events, -1)
+
+
+def test_labels_reject_events_without_period():
+    # Arrange
+    events = _events_with(("Home", "PASS", "", 1, 1, 1), period_none=True)
+
+    # Act / Assert
+    with pytest.raises(ValueError, match="Period"):
+        labels_from_events(events, 5)
+
+
+def test_labels_reject_start_frame_below_one():
+    # Arrange
+    events = _events(("Home", "PASS", "", 1, 0, 1))
+
+    # Act / Assert
+    with pytest.raises(ValueError, match="1-based"):
+        labels_from_events(events, 5)
+
+
+def test_words_of_subtypes_handles_missing_single_and_list_values():
+    # Arrange / Act / Assert
+    assert metrica._words_of_subtypes(None) == ""
+    assert metrica._words_of_subtypes({"name": "OUT"}) == "OUT"
+    assert metrica._words_of_subtypes([{"name": "OFF TARGET"}, {"name": "GOAL"}]) == "OFF TARGET|GOAL"
+
+
+def test_json_event_row_rejects_team_id_that_is_neither_home_nor_away():
+    # Arrange
+    event = {"team": {"id": "UNKNOWN"}, "type": {"name": "PASS"}, "subtypes": None,
+             "period": 1, "start": {"frame": 1}, "end": {"frame": 2}}
+
+    # Act / Assert
+    with pytest.raises(ValueError, match="UNKNOWN"):
+        metrica._json_event_row(event, {"FIFATMA": "Home"})
+
+
+def test_place_scales_metres_and_leaves_missing_frames_nan():
+    # Arrange
+    frames = np.array([2])
+    values = np.array([[0.5, 0.5]])
+
+    # Act
+    placed = metrica._place(frames, values, 3)
+
+    # Assert
+    assert placed[1] == pytest.approx([52.5, 34.0])
+    assert np.isnan(placed[0]).all() and np.isnan(placed[2]).all()
+
+
+@pytest.mark.parametrize("frames", [[1, 1], [0, 2]])
+def test_place_rejects_duplicate_or_zero_based_frame_numbers(frames):
+    # Arrange
+    values = np.zeros((len(frames), 2))
+
+    # Act / Assert
+    with pytest.raises(ValueError, match="1-based"):
+        metrica._place(np.array(frames), values, 3)
+
+
+def test_blocks_span_each_period_from_its_first_to_its_last_frame():
+    # Arrange
+    frames = np.array([1, 2, 3, 4, 5])
+    periods = np.array([1, 1, 2, 2, 2])
+
+    # Act
+    blocks = metrica._blocks(frames, periods)
+
+    # Assert
+    assert blocks == ((0, 2), (2, 5))
+
+
+def test_ground_team_rejects_two_teams_on_the_same_ground():
+    # Arrange
+    teams = [_team("T1", "home", ["P1"]), _team("T3", "home", ["P3"])]
+
+    # Act / Assert
+    with pytest.raises(ValueError, match="home"):
+        metrica._ground_team(teams, "home")
+
+
+def test_read_csv_tracking_rejects_file_without_ball_column(tmp_path):
+    # Arrange
+    path = _tracking_csv(tmp_path / "home.csv", [1], [1], [(0.5, 0.5)], ball_xy=None)
+
+    # Act / Assert
+    with pytest.raises(ValueError, match="Ball"):
+        metrica._read_csv_tracking(path)
+
+
+def _tracking_csv(path, frames, periods, player_xy, ball_xy=None):
+    """Metrica-style CSV: two info rows, then a header whose unnamed columns hold the y values."""
+    header = "Frame,Period,Time [s],Player1,"
+    if ball_xy is not None:
+        header += ",Ball,"
+    lines = ["Teams,,", "Players,,", header]
+    for k, frame in enumerate(frames):
+        values = [frame, periods[k], frame / FPS, *player_xy[k]]
+        if ball_xy is not None:
+            values += list(ball_xy[k])
+        lines.append(",".join(str(value) for value in values))
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return str(path)
+
+
+def test_parse_csv_game_builds_match_from_tracking_and_events(tmp_path):
+    # Arrange
+    frames, periods = [1, 2, 3, 4], [1, 1, 1, 1]
+    names = RAW_FILES["metrica_1"]
+    _tracking_csv(tmp_path / os.path.basename(names["home"]), frames, periods,
+                  [(0.5, 0.5)] * 4, ball_xy=[(0.25, 0.5)] * 4)
+    _tracking_csv(tmp_path / os.path.basename(names["away"]), frames, periods,
+                  [(0.1, 0.1)] * 4, ball_xy=[(0.25, 0.5)] * 4)
+    pd.DataFrame([("Home", "SET PIECE", "KICK OFF", 1, 1, 1),
+                  ("Home", "BALL OUT", "", 1, 4, 4)],
+                 columns=EVENT_COLUMNS).to_csv(tmp_path / os.path.basename(names["events"]), index=False)
+
+    # Act
+    match = metrica._parse_game("metrica_1", str(tmp_path))
+
+    # Assert
+    assert match.home_xy.shape == (4, 1, 2)
+    assert match.home_xy[0, 0] == pytest.approx([52.5, 34.0])
+    assert match.away_xy[0, 0] == pytest.approx([10.5, 6.8], abs=1e-4)
+    assert match.ball_xy[0] == pytest.approx([26.25, 34.0])
+    assert match.blocks == ((0, 4),)
+    assert match.labels[0] == H and match.labels[-1] == D
+
+
+@dataclass(frozen=True)
+class _Player:
+    player_id: str
+
+
+def _team(team_id, ground, player_ids):
+    return SimpleNamespace(team_id=team_id, ground=SimpleNamespace(value=ground),
+                           players=[_Player(pid) for pid in player_ids])
+
+
+def _record(frame_id, period, player_xy, ball_xy):
+    players_data = {_Player(pid): SimpleNamespace(coordinates=SimpleNamespace(x=x, y=y))
+                    for pid, (x, y) in player_xy.items()}
+    ball = None if ball_xy is None else SimpleNamespace(x=ball_xy[0], y=ball_xy[1])
+    return SimpleNamespace(frame_id=frame_id,
+                           period=None if period is None else SimpleNamespace(id=period),
+                           players_data=players_data, ball_coordinates=ball)
+
+
+def _fake_dataset(teams, records):
+    return SimpleNamespace(metadata=SimpleNamespace(teams=teams), records=records)
+
+
+def test_parse_epts_game_places_players_ball_and_periods(tmp_path, monkeypatch):
+    # Arrange
+    teams = [_team("T1", "home", ["P1"]), _team("T2", "away", ["P2"])]
+    records = [
+        _record(1, 1, {"P1": (0.5, 0.5), "P2": (0.25, 0.25)}, (0.1, 0.2)),
+        _record(2, 1, {"P1": (0.5, 0.5)}, None),
+        _record(3, None, {}, None),
+    ]
+    dataset = _fake_dataset(teams, records)
+    events = {"data": [{"team": {"id": "T1"}, "type": {"name": "SET PIECE"}, "subtypes": None,
+                        "period": 1, "start": {"frame": 1}, "end": {"frame": 1}}]}
+    (tmp_path / "Sample_Game_3_events.json").write_text(json.dumps(events), encoding="utf-8")
+    monkeypatch.setattr(metrica.kloppy_metrica, "load_tracking_epts",
+                        lambda meta_data, raw_data: dataset)
+
+    # Act
+    match = metrica._parse_game("metrica_3", str(tmp_path))
+
+    # Assert
+    assert match.home_xy.shape == (3, 1, 2)
+    assert match.home_xy[0, 0] == pytest.approx([52.5, 34.0])
+    assert match.away_xy[0, 0] == pytest.approx([26.25, 17.0])
+    assert np.isnan(match.away_xy[1, 0]).all()
+    assert np.isnan(match.ball_xy[1]).all()
+    assert np.isnan(match.home_xy[2]).all()
+    assert match.blocks == ((0, 2),)
+    assert match.labels[0] == H
+
+
+def test_epts_events_rejects_event_team_missing_from_metadata(tmp_path):
+    # Arrange
+    teams = [_team("T1", "home", ["P1"]), _team("T2", "away", ["P2"])]
+    dataset = _fake_dataset(teams, [])
+    path = tmp_path / "events.json"
+    path.write_text(json.dumps({"data": [{
+        "team": {"id": "GHOST"}, "type": {"name": "PASS"}, "subtypes": None,
+        "period": 1, "start": {"frame": 1}, "end": {"frame": 1}}]}), encoding="utf-8")
+
+    # Act / Assert
+    with pytest.raises(ValueError, match="GHOST"):
+        metrica._epts_events(str(path), dataset)
+
+
+def test_load_rejects_unknown_game_id_before_touching_disk(tmp_path):
+    # Arrange / Act / Assert
+    with pytest.raises(ValueError, match="unknown Metrica game"):
+        metrica.load("metrica_9", str(tmp_path))
+
+
+def test_load_reads_existing_npz_cache_without_parsing(tmp_path):
+    # Arrange
+    match = Match(game_id="metrica_1", home_xy=np.zeros((2, 1, 2), np.float32),
+                  away_xy=np.ones((2, 1, 2), np.float32), ball_xy=np.zeros((2, 2), np.float32),
+                  blocks=((0, 2),), labels=np.array([H, A], dtype=np.int8))
+    metrica._write_cache(match, str(tmp_path / "metrica_1.npz"))
+
+    # Act
+    loaded = metrica.load("metrica_1", str(tmp_path))
+
+    # Assert
+    assert loaded.game_id == "metrica_1"
+    assert loaded.blocks == ((0, 2),)
+    assert loaded.labels.tolist() == [H, A]
+    assert np.array_equal(loaded.away_xy, match.away_xy)
+
+
+def test_load_parses_and_caches_when_no_npz_present(tmp_path, monkeypatch):
+    # Arrange
+    match = Match(game_id="metrica_2", home_xy=np.zeros((1, 1, 2), np.float32),
+                  away_xy=np.zeros((1, 1, 2), np.float32), ball_xy=np.zeros((1, 2), np.float32),
+                  blocks=((0, 1),), labels=np.array([D], dtype=np.int8))
+    monkeypatch.setattr(metrica, "_fetch_missing", lambda game_id, directory: None)
+    monkeypatch.setattr(metrica, "_parse_game", lambda game_id, directory: match)
+
+    # Act
+    loaded = metrica.load("metrica_2", str(tmp_path))
+
+    # Assert
+    assert loaded is match
+    assert (tmp_path / "metrica_2.npz").exists()
+
+
+@pytest.mark.parametrize(("game_id", "parser"), [("metrica_1", "csv"), ("metrica_3", "epts")])
+def test_parse_game_dispatches_on_game_format(game_id, parser, monkeypatch):
+    # Arrange
+    calls = []
+    monkeypatch.setattr(metrica, "_parse_csv_game", lambda gid, files: calls.append(("csv", gid)))
+    monkeypatch.setattr(metrica, "_parse_epts_game", lambda gid, files: calls.append(("epts", gid)))
+
+    # Act
+    metrica._parse_game(game_id, "unused_dir")
+
+    # Assert
+    assert calls == [(parser, game_id)]
+
+
+def test_fetch_writes_response_body_through_part_file(tmp_path, monkeypatch):
+    # Arrange
+    target = str(tmp_path / "events.json")
+    monkeypatch.setattr(metrica.urllib.request, "urlopen",
+                        lambda url, timeout: contextlib.nullcontext(io.BytesIO(b"payload")))
+
+    # Act
+    metrica._fetch("https://example.test/events.json", target)
+
+    # Assert
+    assert open(target, "rb").read() == b"payload"
+    assert not os.path.exists(target + ".part")
