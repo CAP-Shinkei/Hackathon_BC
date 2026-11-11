@@ -6,6 +6,9 @@
                                                        # out/submissions/v2_min2s_fill_hsmm.csv
     python make_submission.py --model v2 --min-s 2 --fill --decoder hsmm --drop-outside
                                                        # ..._hsmm_rule.csv (E13)
+    python make_submission.py --model v2 --min-s 2 --fill --decoder hsmm --drop-outside \
+        --regimes mix --context --turnover             # ..._rule_mix_ctx_turn.csv (E25, E26)
+    ... --stack model/sequence_mix_ctx_turn.pt         # ..._mix_ctx_turn_nn.csv (E27; PyTorch)
 
 Needs the Metrica sample data (external_data/metrica_sample_data, or METRICA_SAMPLE_DIR), its
 answer keys (python external/build_gt.py), the competition data (MTAH_DATA_DIR) and a clone of
@@ -27,7 +30,7 @@ sys.path.insert(0, os.path.join(HERE, "experiments"))
 
 from common import dfl_games, external_games  # noqa: E402
 from controlled import controlled  # noqa: E402
-from gapsim import Params, damage  # noqa: E402
+from gapsim import TRAIN_EXTRA, Params, damage  # noqa: E402
 from mtah import competition as comp  # noqa: E402
 from mtah import ballfill, features, kickoff, v1, v2  # noqa: E402
 from mtah.evidence import drop_far_outside, nearest_team  # noqa: E402
@@ -43,29 +46,37 @@ def second_half_kickoff(ball, instances):
     return (found, "detected") if found is not None else (lo + 250, "tag start (fallback)")
 
 
-def v2_features(ball, players, teams, pitch, blocks, fill):
-    """v2's feature matrix, plus the straight-line ball-fill features when fill is set."""
+def v2_features(ball, players, teams, pitch, blocks, fill, context=False, turnover=False):
+    """v2's feature matrix, plus the straight-line ball-fill features when fill is set, and the
+    context (E25) and turnover (E26) families, which read the filled ball."""
     near = nearest_team(ball, players, teams, pitch)
     Xg, names = features.compute(ball, players, teams, pitch, near)
     if fill:
         filled, gap = ballfill.fill(ball, players, pitch, blocks)
         near_f = nearest_team(filled, players, teams, pitch)
-        Xf, nf = features.compute_filled(filled, gap, players, teams, pitch, near_f)
-        Xg, names = np.hstack([Xg, Xf]), names + nf
+        parts = [features.compute_filled(filled, gap, players, teams, pitch, near_f)]
+        if context:
+            parts.append(features.compute_context(ball, players, teams, pitch, near_f))
+        if turnover:
+            parts.append(features.compute_turnover(ball, players, teams, pitch, near, near_f))
+        Xg = np.hstack([Xg] + [x for x, _ in parts])
+        names = names + [k for _, nm in parts for k in nm]
     return Xg, names
 
 
-def v2_training_items(min_s, fill=False, rule=False):
-    """[(game_id, X, y, names)]: every external game damaged at each training gap rate."""
+def v2_training_items(min_s, fill=False, rule=False, mix=False, context=False, turnover=False):
+    """[(game_id, X, y, names)]: every external game damaged by each training profile: the three
+    gap rates, plus gapsim.TRAIN_EXTRA when mix is set."""
+    profiles = [dict(live_missing=rate) for rate in v1.GAP_RATES] + list(TRAIN_EXTRA if mix else ())
     items = []
     for g in external_games() + dfl_games():
-        for i, rate in enumerate(v1.GAP_RATES):
+        for i, fields in enumerate(profiles):
             ball, players = damage(g["ball"], g["players"], g["teams"], g["gt"], g["pitch"],
-                                   Params(live_missing=rate), seed=100 + i)
+                                   Params(**fields), seed=100 + i)
             if rule:
                 ball = drop_far_outside(ball, g["pitch"])
             Xg, names = v2_features(ball, players, g["teams"], g["pitch"],
-                                    graded_blocks(g["gt"]), fill)
+                                    graded_blocks(g["gt"]), fill, context, turnover)
             items.append((g["name"], Xg, controlled(g["gt"], min_s), names))
     return items
 
@@ -81,13 +92,30 @@ def main():
                         help="treat a ball more than 10 m beyond the lines as not seen (E13)")
     parser.add_argument("--decoder", choices=("viterbi", "hsmm"), default="viterbi",
                         help="final decoding step (v2 only)")
+    parser.add_argument("--regimes", choices=("std", "mix"), default="std",
+                        help="training gap profiles: the three gap rates, or those plus false "
+                             "detections and dark stoppages (E25)")
+    parser.add_argument("--context", action="store_true",
+                        help="add the context features (E25; needs --fill)")
+    parser.add_argument("--turnover", action="store_true",
+                        help="add the turnover features (E26; needs --fill)")
+    parser.add_argument("--stack", metavar="FILE",
+                        help="stack the sequence model written by train_sequence.py on the "
+                             "classifier (E27; needs --decoder hsmm and PyTorch)")
     parser.add_argument("--out")
     args = parser.parse_args()
+    if (args.context or args.turnover) and not args.fill:
+        parser.error("--context and --turnover read the filled ball: add --fill")
+    if args.stack and args.decoder != "hsmm":
+        parser.error("--stack is decoded by the HSMM: add --decoder hsmm")
     if args.out is None:
-        name = "v1" if args.model == "v1" else "v2_min{:g}s{}{}{}".format(
+        name = "v1" if args.model == "v1" else "v2_min{:g}s{}{}{}{}{}{}".format(
             args.min_s, "_fill" if args.fill else "",
             "_hsmm" if args.decoder == "hsmm" else "",
-            "_rule" if args.drop_outside else "")
+            "_rule" if args.drop_outside else "",
+            "_mix" if args.regimes == "mix" else "",
+            "_ctx" if args.context else "", "_turn" if args.turnover else "") + (
+            "_nn" if args.stack else "")
         args.out = os.path.join(HERE, "out", "submissions", name + ".csv")
 
     if args.model == "v1":
@@ -98,7 +126,8 @@ def main():
     else:
         print("fitting v2 on the damaged Metrica + DFL games, controlled rule {} s ...".format(
             args.min_s), flush=True)
-        items = v2_training_items(args.min_s, args.fill, args.drop_outside)
+        items = v2_training_items(args.min_s, args.fill, args.drop_outside,
+                                  args.regimes == "mix", args.context, args.turnover)
         model = v2.fit(items)
         print("  temperature {}  min_spell {} frames  out-of-fold external spellF1 {:.4f}".format(
             model["temperature"], model["min_spell"], model["oof_spell_f1"]))
@@ -124,8 +153,27 @@ def main():
     if args.model == "v1":
         labels = v1.predict(near, blocks, model)
     else:
-        Xc, names = v2_features(ball, players, teams, comp.PITCH, comp.GRADED, args.fill)
-        labels = v2.predict(model, Xc, names, blocks, comp.N_FRAMES)
+        Xc, names = v2_features(ball, players, teams, comp.PITCH, comp.GRADED, args.fill,
+                                args.context, args.turnover)
+        if args.stack:
+            # Deferred: PyTorch is needed only here. One thread, so the arithmetic does not
+            # depend on how many cores the machine has.
+            import torch
+            from mtah import sequence
+            torch.set_num_threads(1)
+            bundle = sequence.load(args.stack)
+            if bundle["names"] != names:
+                raise ValueError("{} was trained on other features".format(args.stack))
+            proba = sequence.fuse(v2.symmetric_proba(model["clf"], Xc, names),
+                                  sequence.ensemble(bundle["models"], Xc, names))
+            print("  stacked with {}: hsmm temperature {}, out-of-fold external spellF1 "
+                  "{:.4f}".format(os.path.basename(args.stack), bundle["temperature"],
+                                  bundle["oof_spell_f1"]))
+            labels = v2.hsmm_decode(proba, blocks, model["prior"], model["log_dur"],
+                                    model["hsmm_log_trans"], bundle["temperature"],
+                                    comp.N_FRAMES)
+        else:
+            labels = v2.predict(model, Xc, names, blocks, comp.N_FRAMES)
     labels[a2:k2] = D
 
     os.makedirs(os.path.dirname(args.out), exist_ok=True)

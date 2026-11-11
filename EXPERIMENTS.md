@@ -281,3 +281,146 @@ Reading:
   to the organisers).
 - Decision: **adopt the rule** (`make_submission.py --drop-outside`; weakly better everywhere).
   Artefact training: team decision, pending the organisers' answer.
+
+---
+
+**Numbering.** E14-E24 are the team's experiments on the `main` branch of
+`CAP-Shinkei/Hackathon_BC` (whistle, a rebuild of this pipeline, regime-mix training, extended
+features, SkillCorner training); their log is `EXPERIMENTS.md` there. This branch continues at E25.
+
+## Where the E13 candidate lost its score (`experiments/anatomy/`, 2026-11-11)
+
+The E13 candidate re-fitted in the E10 protocol (it reproduces E10 to the last digit), then its
+predictions on the external test games compared with three partly-perfect versions of themselves.
+Mean spellF1 over games:
+
+| cell | actual | true team inside our live stretches | true dead-ball mask, our team | our possessions with perfect boundaries |
+|---|---|---|---|---|
+| DFL -> Metrica, 15% live missing | 0.662 | 0.903 | 0.745 | 0.779 |
+| DFL -> Metrica, 35% | 0.615 | 0.882 | 0.719 | 0.756 |
+| DFL -> Metrica, 50% | 0.596 | 0.851 | 0.685 | 0.734 |
+| Metrica -> DFL, 15% | 0.539 | 0.899 | 0.627 | 0.691 |
+| Metrica -> DFL, 35% | 0.518 | 0.885 | 0.613 | 0.676 |
+| Metrica -> DFL, 50% | 0.506 | 0.880 | 0.603 | 0.671 |
+
+- The loss is in **which team has the ball and when it changes**: +0.24 to +0.37 if the team
+  were right, against +0.08 to +0.10 if dead ball were right.
+- Ball gaps are not the main limit: 50% -> 15% of live frames missing gains only 0.03-0.07, and
+  even with the ball visible the classifier names the right team on 87-91% of frames.
+- Recall at IoU 0.5 by true possession length: under 3 s 0.13-0.19, 3-6 s 0.27-0.46, over 12 s
+  0.72-0.91. Possessions under 6 s are 39-45% of all.
+- Turnover timing is imprecise, not late: 35-52% of matched turnover boundaries are within 1 s of
+  the truth, and moving every predicted turnover 0.2-1.2 s later gains at most 0.005.
+- The controlled-possession threshold alone (`definition_cost.py`): a perfect model using 2 s
+  scores 0.76-0.80 if the key uses 0 s, 0.85-0.89 for 1 s, 0.86-0.90 for 3 s, 0.69-0.76 for 5 s.
+  About 0.10 per second of mismatch; 2 s is close to the safest pick over 0-3 s.
+
+This is what pointed E25-E27 at turnover evidence rather than at the decoder or the ball fill.
+
+## E25 one benchmark for every variant; more training regimes; context features (`experiments/e25_benchmark.py`)
+
+One script now scores every variant of v2 + fill + HSMM + rule on the same test sets:
+- **std35, std50**: E10's four cells (fit on one dataset, score on the other; seeds 7, 8). Their
+  mean is the **selection number**.
+- **art10**: the same with 10 false-detection bursts a minute and the centre blind spot (E13's
+  hardest cell).
+- **dark**: 7% of live frames missing, ball seen on a fifth of each stoppage (SkillCorner's real
+  figures, E11).
+- **sc_real**: fit on Metrica + DFL, score on 8 SkillCorner games (real gaps) never trained on.
+
+`std` reproduces E10 exactly (0.6154 / 0.5958 / 0.5179 / 0.5062). Variants:
+- **mix**: two more training regimes per game (`gapsim.TRAIN_EXTRA`): E13's artefacts, and the
+  dark-stoppage regime. Five damaged copies per game instead of three.
+- **+ctx** (`features.compute_context`, 28 clues, after the team's E18): the nearest-team share
+  and the ball-seen share over the 6 s and 12 s before and after each frame separately; each
+  team's closest approach to the ball in the second before and after; each team's distance to
+  where the ball was last and is next seen; share of players standing still; team length, width,
+  spread rate, sprinters.
+- **+turn** (`features.compute_turnover`, 21 clues, E26 below).
+
+spellF1:
+
+| variant | DFL->Metrica 35% | 50% | Metrica->DFL 35% | 50% | **selection** | art10 | dark | sc_real |
+|---|---|---|---|---|---|---|---|---|
+| baseline (+/-2 s vote) | 0.259 | 0.213 | 0.254 | 0.222 | 0.237 | 0.229 | 0.355 | 0.294 |
+| std (E13 candidate) | 0.615 | 0.596 | 0.518 | 0.506 | 0.559 | 0.518 | 0.626 | 0.463 |
+| mix | 0.609 | 0.587 | 0.521 | 0.502 | 0.555 | 0.556 | 0.631 | 0.467 |
+| mix+ctx | 0.698 | 0.662 | 0.630 | 0.620 | 0.652 | 0.649 | 0.704 | 0.469 |
+| mix+turn | 0.690 | 0.650 | 0.603 | 0.578 | 0.630 | 0.618 | 0.715 | 0.487 |
+| **mix+ctx+turn** | **0.720** | **0.681** | **0.656** | **0.640** | **0.674** | **0.664** | **0.734** | 0.475 |
+
+Reading:
+- **mix** costs nothing on the selection number (-0.004, inside noise) and gains +0.04 with false
+  detections: AGENTS.md's old next step 2, done.
+- **The context features are the largest single gain since v2: +0.097**, in every cell and under
+  all three simulated gap patterns. On SkillCorner they add nothing (+0.002). Likely reason, not
+  measured: several of them describe the whole team, and a broadcast camera only sees the 4-5
+  players per team near the ball, while a tactical camera (ours: ~20 players tracked) sees all.
+- The two families add up (0.674), and the combination is the best on every simulated cell.
+- Caveat on the size of the gain: it is proven on simulated gaps in full-pitch tracking. On real
+  broadcast gaps the candidate moves from 0.463 to 0.475 only.
+- Not run: `mix+ctx+turn+sc` (12 SkillCorner games added to training, after the team's E24), and
+  `experiments/e25_ablation.py` (which context clues carry the gain). Both need the machine alone.
+
+Decision: **adopt mix+ctx+turn** (flags `--regimes mix --context --turnover`).
+
+**The team's pipeline on these test sets** (`e25_team_export.py`, `e25_team_side.py`): their
+code, training regimes, features and decoder unchanged, their pinned environment; only the split
+and the test damage are ours. Their old-style configuration (`e17_old_train`: random gaps, their
+base features): selection 0.515, art10 0.474, dark 0.622, sc_real 0.481. Their two newer
+configurations (`e18_v2`, `e24_v2_real`, the one they ship) were not run: memory.
+
+**Pipeline checks on the competition match (aggregates only; nothing was chosen by them).**
+- The team's shipped bundle (`main`, md5 of its CSV 5df8f51f...) runs cleanly on the match: 232
+  possessions, dead ball 45.2% of graded frames, home 60.2% of live time, no sanity warnings.
+- Frame agreement / cross spellF1 between files: E13 candidate vs team 0.892 / 0.609; new
+  candidate vs team 0.906 / 0.666; E13 candidate vs new candidate 0.879 / 0.563.
+- The new clues have the same aggregate ranges on the match tracking as on the external games.
+- The match's ball gaps are long: at least 10% of graded frames lie in a gap of more than 54 s,
+  and the short-window visibility is almost all-or-nothing. That is the dark-stoppage picture of
+  E11, not the default simulator's many 1 s gaps. Not used to set anything (whether simulator
+  settings may be measured on the provided tracking is an open question to the organisers).
+
+## E26 turnover features (`mtah/features.py: compute_turnover`, rows `+turn` above)
+
+Clues aimed at the moment possession changes, which the anatomy showed is where the score goes:
+how long the same team has been and stays nearest to the (filled) ball, and the length of the
+runs before and after (the challenge's "keeps the ball for a few seconds" as a clue); the break
+in the ball's velocity over 0.4 s before and after each frame, its largest value in the 2 s
+before and after split by which team's player was nearest, and the time since and until each
+team last "played" the ball (a break above 6 m/s); the closing speed of the ball on each team's
+nearest player; the nearest-team share over the 1 s and 3 s before and after.
+
+Alone on top of mix: selection +0.075, and the only family that helps on SkillCorner's real gaps
+(+0.020). On top of the context features: +0.022. Decision: **keep**, with the context features.
+
+## E27 sequence model: a small transformer over the same clues (`mtah/sequence.py`, `experiments/e27_sequence.py`, `e27_stack.py`)
+
+A transformer (3 layers, width 96, 284k parameters) reads ~50 s of the 79 clues at 25 fps and
+labels every 0.2 s. Two extra outputs are training signals only: touch-level possession, and the
+hidden ball's distance to each team's nearest player on frames where the simulator hid the ball
+(Manuel's "restore what was deleted" idea, in the form this model can use). Same folds, same HSMM
+and the same test sets as E25; the test prediction is the mean of the three fold models.
+Stacking = geometric mean with the classifier's probabilities, no fitted weight.
+
+| model | DFL->Metrica 35% | 50% | Metrica->DFL 35% | 50% | **selection** | art10 | dark |
+|---|---|---|---|---|---|---|---|
+| mix+ctx (classifier) | 0.698 | 0.662 | 0.630 | 0.620 | 0.652 | 0.649 | 0.704 |
+| sequence model alone | 0.717 | 0.698 | 0.618 | 0.589 | 0.656 | 0.629 | 0.732 |
+| mix+ctx x sequence | 0.712 | 0.696 | 0.636 | 0.628 | 0.668 | 0.650 | 0.730 |
+| mix+ctx+turn (classifier) | 0.720 | 0.681 | 0.656 | 0.640 | 0.674 | 0.664 | 0.734 |
+| mix+ctx+turn x sequence | 0.724 | 0.703 | 0.643 | 0.628 | 0.675 | 0.652 | 0.741 |
+
+Reading:
+- The sequence model depends on how many games it learns from: fitted on 7 DFL games it beats
+  the classifier that lacks the turnover clues by +0.03; fitted on 3 Metrica games it loses by
+  0.02. Alone it is level with mix+ctx and below mix+ctx+turn.
+- **Once the classifier has both feature families, stacking adds nothing**: +0.0003 on the
+  selection number, -0.012 with false detections, +0.006 with dark stoppages.
+- So the gain of this round came from better clues, not from the model type. The version without
+  the two training-only outputs (`--no-aux`) was not run, so their own effect is unmeasured.
+- Not run on SkillCorner.
+
+Decision: **not adopted as the main candidate.** Kept as a second file at Manuel's request (see
+the submissions below), with the caveat that a neural network's arithmetic can differ in the last
+bits between machines, while the rules ask for the exact file.

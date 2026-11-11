@@ -52,6 +52,14 @@ class Params:
     centre_blind_m: float = 0.0     # ball unseen this close to the centre spot (0 = off)
 
 
+# Training profiles beyond the plain gap rates (E25), as Params fields: E13's artefacts (false
+# detections, centre-spot blind spot), and stoppages left dark with few live gaps, at the
+# figures measured on SkillCorner's real tracking (E11: 7% of live frames without ball, ball
+# seen on 21% of dead frames).
+TRAIN_EXTRA = (dict(live_missing=0.35, false_per_min=5.0, centre_blind_m=3.0),
+               dict(live_missing=0.07, dead_visible=0.2))
+
+
 def _lognormal_lengths(rng, n, median_s, sigma):
     return np.maximum(1, np.round(rng.lognormal(np.log(median_s * FPS), sigma, n))).astype(int)
 

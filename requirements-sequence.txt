@@ -1,0 +1,4 @@
+# Only for the sequence model (E27): train_sequence.py, make_submission.py --stack,
+# experiments/e27_sequence.py. CPU build:
+#   pip install torch==2.15.0 --index-url https://download.pytorch.org/whl/cpu
+torch==2.15.0
