@@ -1,0 +1,10 @@
+# Only rules that catch real mistakes; style is left to the authors.
+line-length = 110
+target-version = "py312"
+extend-exclude = ["official", "external_data", "out"]
+
+[lint]
+select = ["E9", "F", "B905", "B028"]
+
+[lint.per-file-ignores]
+"tests/*" = ["B905"]
