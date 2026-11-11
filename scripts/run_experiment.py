@@ -10,7 +10,7 @@ from dataclasses import replace
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from mtah import experiment, labels  # noqa: E402
+from mtah import experiment, features, features_v2, labels  # noqa: E402
 from mtah.experiment import Config  # noqa: E402
 from mtah.external import dfl, metrica  # noqa: E402
 
@@ -29,7 +29,14 @@ CONFIGS = {c.name: c for c in (
             train_regimes=("random35", "mixed41", "mixed41_art", "dark50")),
     replace(BASE, name="e17_mix_t2", temperature=2.0, eval_regimes=BENCH,
             train_regimes=("random35", "mixed41", "mixed41_art", "dark50")),
+    replace(BASE, name="e18_v2", temperature=4.0, eval_regimes=BENCH, feature_version="v2",
+            train_regimes=("random35", "mixed41", "mixed41_art", "dark50")),
 )}
+
+
+def feature_fn(cfg):
+    """The featuriser a config asks for: its feature_version names the module."""
+    return features_v2.featurise if cfg.feature_version.startswith("v2") else features.featurise
 
 
 def load_games(min_s=CONTROLLED_S):
@@ -41,7 +48,7 @@ def main(names):
     games = load_games()
     os.makedirs(os.path.join(ROOT, "out", "results"), exist_ok=True)
     for name in names:
-        rows = experiment.run(games, CONFIGS[name])
+        rows = experiment.run(games, CONFIGS[name], feature_fn(CONFIGS[name]))
         summary = experiment.summarise(rows)
         with open(os.path.join(ROOT, "out", "results", name + ".json"), "w") as handle:
             json.dump({"rows": rows, "summary": summary}, handle, indent=1)
