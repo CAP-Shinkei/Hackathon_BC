@@ -434,9 +434,25 @@ The alternative: train the classifier and the HSMM on the touch-level labels, de
 touch-level sequence and apply `controlled.py` to the PREDICTION. The HSMM's duration
 distributions and transitions are counted on the touch labels, not reused from the
 controlled-label ones. If the split works, the controlled threshold stops being a training
-constant: the 0/1/2/3 s sweep runs on the decoded sequence, one training run instead of one per
-threshold. The sweep measures how much our result depends on that convention; it is not a
-search for the challenge's private definition, and nothing touches the competition match.
+constant: the 0/0.5/1/2/3 s sweep runs on the decoded sequence, one training run instead of
+one per threshold. The sweep measures how much our result depends on that convention; it is
+not a search for the challenge's private definition, and nothing touches the competition match.
+Read the sweep with care: every threshold is scored against answer keys built with the same 2 s
+rule, which stacks the table in favour of min_s = 2 s. The honest reading is sensitivity (what
+each threshold costs against today's convention), not discovery of the real one.
+
+Open hypothesis, deliberately NOT implemented (Álvaro, 2026-11-11): a fixed duration cannot
+tell a deflection from a controlled touch - a 0.5 s contact can be a rebound or a clean take
+followed by a pass. What separates them may be what happens next: a controlled touch often ends
+in a deliberate exit (a pass to a teammate); a deflection ends loose or with the other team.
+The tracking features already compute next-sighting and velocity-break clues (E25/E26), and
+ball speed alone does not prove intent - the new part would be a DECISION rule that classifies
+each short spell as control or contact from its aftermath (next-touch team, time to next touch,
+change in ball velocity at the exit), instead of its length alone. Nothing in `controlled.py`,
+the HSMM durations or the fixed rules applies such a rule today. It cannot be validated with
+our current controlled labels, which are built by the duration rule itself; it would need an
+independent reference (hand annotations, an external review) before the team trusts it. Until
+then it is a hypothesis, not a result.
 
 **Status: code written 2026-11-11, NOT RUN - no numbers yet.** Proposed decision rule (a
 proposal for the team, not a validated result): the split is worth keeping only if, under the
@@ -445,7 +461,7 @@ the E25 `mix+ctx+turn` row fitted and scored the same way on the selection cells
 clear loss on the sc_real cell; a win only on simulated gaps, or with fragmented possessions
 (n_pred well above n_gt), argues for dropping it. Candidate 1's 0.6742 orients the comparison;
 it is not a fixed threshold. Each cell reports spellF1, macroF1 and predicted/gt spell counts
-at min_s 0/1/2/3, per game.
+at min_s 0/0.5/1/2/3, per game.
 
 Risks to check when it runs: the classifier's 1-in-4 subsampling may thin sub-second touch
 spells; touch-level spells are shorter, so the duration histograms move left and the out-of-fold
