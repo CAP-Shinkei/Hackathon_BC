@@ -137,7 +137,7 @@ def _kicked_off_blocks(blocks, kickoff_frames):
         raise ValueError("kickoff: {} frames given for {} blocks".format(
             len(kickoff_frames), len(blocks)))
     cut = []
-    for (start, stop), kickoff in zip(blocks, kickoff_frames):
+    for (start, stop), kickoff in zip(blocks, kickoff_frames, strict=True):
         begin = max(start, int(kickoff))
         if begin < stop:
             cut.append((begin, stop))

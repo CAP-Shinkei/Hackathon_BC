@@ -160,3 +160,35 @@ def test_load_atd_warns_about_truncated_lines_but_not_blank_ones(tmp_path):
                           blocks=BLOCKS)
 
     assert np.isnan(loaded.ball_xy[1]).all()
+
+
+@pytest.mark.parametrize("n_frames, pitch, message", [
+    (0, PITCH, "n_frames must be positive"),
+    (N_FRAMES, (105.0,), "two positive lengths"),
+    (N_FRAMES, (105.0, 0.0), "two positive lengths"),
+])
+def test_load_atd_rejects_impossible_frame_counts_and_pitches(tmp_path, n_frames, pitch, message):
+    meta_path, raw_path = export_atd(make_match(), tmp_path, "synthetic")
+
+    with pytest.raises(ValueError, match=message):
+        load_atd(meta_path, raw_path, n_frames=n_frames, pitch=pitch, blocks=BLOCKS)
+
+
+GOOD_GROUP = "0.5,0.5,0.0"
+GOOD_PLAYERS = ";".join([GOOD_GROUP] * (HOME_PLAYERS + AWAY_PLAYERS))
+BAD_PLAYERS = ";".join([GOOD_GROUP] * (HOME_PLAYERS + AWAY_PLAYERS - 1) + ["0.5,oops,0.0"])
+
+
+@pytest.mark.parametrize("line, message", [
+    ("1:" + GOOD_PLAYERS + ":0.5,0.5", "values, expected"),
+    ("1:" + BAD_PLAYERS + ":" + GOOD_GROUP, "non-numeric value"),
+    ("one:" + GOOD_PLAYERS + ":" + GOOD_GROUP, "is not an integer"),
+    ("0:" + GOOD_PLAYERS + ":" + GOOD_GROUP, "outside 1"),
+])
+def test_load_atd_names_the_line_of_a_malformed_frame_record(tmp_path, line, message):
+    meta_path, _ = export_atd(make_match(), tmp_path, "synthetic")
+    bad_raw = tmp_path / "bad_atd.txt"
+    bad_raw.write_text(line + "\n")
+
+    with pytest.raises(ValueError, match="line 1: .*" + message):
+        load_atd(meta_path, bad_raw, n_frames=1, pitch=PITCH, blocks=((0, 1),))

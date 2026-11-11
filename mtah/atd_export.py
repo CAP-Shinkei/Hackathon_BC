@@ -56,7 +56,7 @@ def export_kickoff_tagging(blocks, out_path, fps=25):
 
 def _write_meta(meta_path, n_home, n_away):
     root = ET.Element("MetaData")
-    for team_id, name in zip((HOME_TEAM_ID, AWAY_TEAM_ID), TEAM_NAMES):
+    for team_id, name in zip((HOME_TEAM_ID, AWAY_TEAM_ID), TEAM_NAMES, strict=True):
         team = ET.SubElement(root, "Team", id=team_id)
         ET.SubElement(team, "Name").text = name
     slot = 0

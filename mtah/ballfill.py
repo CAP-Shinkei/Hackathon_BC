@@ -89,7 +89,7 @@ def fill_linear(ball_xy, blocks):
     gap, since, until = np.empty(n), np.empty(n), np.empty(n)
     for start, stop in segments(n, blocks):
         parts = _fill_segment(ball[start:stop])
-        for target, part in zip((filled, seen, gap, since, until), parts):
+        for target, part in zip((filled, seen, gap, since, until), parts, strict=True):
             target[start:stop] = part
     return (filled.astype(np.float32), seen, gap.astype(np.float32),
             since.astype(np.float32), until.astype(np.float32))

@@ -2,8 +2,8 @@
 
     python scripts/make_submission.py --data-dir /path/to/mtah2027 --bundle model/bundle.joblib
 
-Prints only aggregate facts about the file (path, md5, label counts, possession count); it never
-prints frame-level data.
+Prints only aggregate facts (path, md5, label counts, possession count, and the shares and
+warnings of mtah/diagnostics.py); it never prints frame-level data.
 """
 import argparse
 import hashlib
@@ -18,7 +18,7 @@ for folder in (ROOT, OFFICIAL, os.path.join(OFFICIAL, "evaluation")):
 
 import games as official_games  # noqa: E402
 import possession_metrics as pm  # noqa: E402
-from mtah import io_atd, submission  # noqa: E402
+from mtah import diagnostics, io_atd, submission  # noqa: E402
 
 DATA_DIR_ENV = "MTAH_DATA_DIR"
 DEFAULT_BUNDLE = os.path.join(ROOT, "model", "bundle.joblib")
@@ -59,12 +59,16 @@ def _md5(path):
 DRAFT_SUFFIX = ".unvalidated"  # a file only takes its final name once it has validated
 
 
-def _aggregates(table, n_frames, out_path):
+def _aggregates(table, match, out_path):
     codes = pm.label_codes(table)
     counts = {name: int((codes == index).sum()) for index, name in enumerate(COUNT_NAMES)}
     possessions = len(pm.possession_spells(codes, pm.valid_runs(codes)))
+    tracking = diagnostics.input_summary(match)
+    labels = diagnostics.output_summary(codes, match.blocks, possessions)
+    warnings = diagnostics.input_warnings(tracking) + diagnostics.output_warnings(labels)
     return {"output": out_path, "md5": _md5(out_path), "counts": counts,
-            "possessions": possessions, "rows": n_frames}
+            "possessions": possessions, "rows": match.n_frames,
+            "tracking": tracking, "labels": labels, "warnings": warnings}
 
 
 def build(data_dir, bundle_path, out_path, game, games_module):
@@ -84,7 +88,7 @@ def build(data_dir, bundle_path, out_path, game, games_module):
     if reason:
         raise ValueError("submission is invalid ({}); left at {}".format(reason, draft_path))
     os.replace(draft_path, out_path)
-    return _aggregates(table, n_frames, out_path)
+    return _aggregates(table, match, out_path)
 
 
 def _parse_args(argv):
@@ -100,6 +104,10 @@ def _parse_args(argv):
     return args
 
 
+def _rounded(value):
+    return round(value, 3) if isinstance(value, float) else value
+
+
 def _report(summary):
     counts = summary["counts"]
     print("output: {}".format(summary["output"]))
@@ -107,6 +115,13 @@ def _report(summary):
     print("rows: {}".format(summary["rows"]))
     print("labels: " + "  ".join("{} {}".format(name, counts[name]) for name in COUNT_NAMES))
     print("possessions: {}".format(summary["possessions"]))
+    for section in ("tracking", "labels"):
+        print("{}: {}".format(section, "  ".join(
+            "{} {}".format(name, _rounded(value)) for name, value in summary[section].items())))
+    for text in summary["warnings"]:
+        print("WARNING: " + text)
+    if not summary["warnings"]:
+        print("sanity checks: no warnings")
 
 
 def main(argv=None):

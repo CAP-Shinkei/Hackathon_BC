@@ -104,7 +104,7 @@ def _runs(mask):
     """(start, stop) pairs of the True runs in a boolean array."""
     padded = np.concatenate(([False], mask, [False])).astype(np.int8)
     edges = np.diff(padded)
-    return zip(np.flatnonzero(edges == 1), np.flatnonzero(edges == -1))
+    return zip(np.flatnonzero(edges == 1), np.flatnonzero(edges == -1), strict=True)
 
 
 def _dead_ball_hidden(match, in_block, dead_hidden, rng):

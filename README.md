@@ -79,6 +79,13 @@ Flags (de su `argparse`):
 
 El script predice, escribe el CSV y lo valida con `pm.validate_submission`. Si la validación falla, aborta con error. Al final imprime la ruta, el md5, el número de filas, el recuento de etiquetas `H A D X` y el número de posesiones. No imprime datos a nivel de fotograma.
 
+Después imprime dos líneas de comprobaciones de cordura (`mtah/diagnostics.py`), todas agregadas sobre los bloques evaluados:
+
+- `tracking`: fracción de fotogramas sin balón, jugadores visibles por equipo de media y fracción de posiciones fuera del campo.
+- `labels`: fracción de balón parado, reparto del juego vivo entre equipos y posesiones por minuto.
+
+Si algún valor es inverosímil aparece una línea `WARNING:` que dice qué revisar (escala de coordenadas, asignación de equipos, alineación de fotogramas). Un aviso no detiene la ejecución: el CSV puede pasar la validación de formato y aun así salir de un tracking mal leído, así que **hay que leer los avisos antes de entregar**. Los límites son genéricos (`mtah/diagnostics.py`), no están ajustados a ningún partido.
+
 Validación oficial: ejecutar `official/evaluation/validate_submission.py` sobre el CSV generado. Los argumentos de ese script no se documentan aquí; consultar su cabecera en el repositorio oficial. Este paso lo ejecuta una persona.
 
 ## Experimentos y tests
@@ -99,6 +106,8 @@ Tests:
 .venv/bin/python -m pytest --cov=mtah
 ```
 
+La misma suite y un lint mínimo (`ruff.toml`) corren en GitHub Actions en cada PR (`.github/workflows/tests.yml`); el flujo clona el repositorio oficial solo por su código y no usa datos de ningún partido.
+
 `pytest.ini` define `testpaths = tests` y `-q`. Los tests de DFL y Metrica con datos reales se omiten si no están descargados. `tests/test_e2e.py` necesita `official/`.
 
 ## Estructura del repositorio
@@ -115,6 +124,7 @@ Tests:
 | `mtah/ballclean.py`, `mtah/ballfill.py` | limpieza y relleno del balón |
 | `mtah/rules.py` | reglas geométricas previas al scoring |
 | `mtah/baseline.py` | baseline oficial, para comparar |
+| `mtah/diagnostics.py` | comprobaciones de cordura agregadas del tracking leído y de las etiquetas predichas |
 | `mtah/scoring.py` | llamada fina al scorer oficial |
 | `mtah/submission.py` | entrenamiento, guardado y predicción del bundle; escritura del CSV |
 | `mtah/experiment.py` | protocolo dejar-un-partido-fuera |

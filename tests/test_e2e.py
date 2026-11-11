@@ -156,6 +156,28 @@ def test_submission_passes_official_validation(pipeline):
     assert reason is None
 
 
+def test_summary_carries_sanity_aggregates_and_flags_the_off_pitch_ball(pipeline):
+    summary = pipeline.summary
+
+    assert summary["tracking"]["graded_frames"] == sum(stop - start for start, stop in BLOCKS)
+    assert 0.0 < summary["tracking"]["ball_missing_share"] < 1.0
+    assert 0.0 <= summary["labels"]["dead_share"] < 1.0
+    # The fixture parks the dead ball 30 m off the pitch, so that one warning is expected.
+    assert len(summary["warnings"]) == 1
+    assert "ball positions fall outside the pitch" in summary["warnings"][0]
+
+
+def test_report_prints_warnings_and_no_frame_level_data(pipeline, capsys):
+    flagged = dict(pipeline.summary, warnings=["the ball is missing on 95% of graded frames"])
+
+    make_submission._report(flagged)
+    printed = capsys.readouterr().out
+
+    assert "WARNING: the ball is missing on 95% of graded frames" in printed
+    assert "sanity checks: no warnings" not in printed
+    assert len(printed.splitlines()) < 12
+
+
 def test_csv_has_one_row_per_frame_with_header(pipeline):
     with open(pipeline.csv_path, encoding="ascii") as handle:
         lines = handle.read().split("\n")
