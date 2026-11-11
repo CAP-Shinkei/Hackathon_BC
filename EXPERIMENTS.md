@@ -425,6 +425,57 @@ Decision: **not adopted as the main candidate.** Kept as a second file at Manuel
 the submissions below), with the caveat that a neural network's arithmetic can differ in the last
 bits between machines, while the rules ask for the exact file.
 
+## E28 touch labels first, controlled rule after decoding (`experiments/e28_touch_then_controlled.py`)
+
+Hypothesis (Álvaro, 2026-11-11): the pipeline applies the 2 s controlled rule to the labels
+BEFORE training, so the classifier has to learn the ball contact and our possession convention
+at the same time, and a short opposing touch relabels its frames as the other team's possession.
+The alternative: train the classifier and the HSMM on the touch-level labels, decode a
+touch-level sequence and apply `controlled.py` to the PREDICTION. The HSMM's duration
+distributions and transitions are counted on the touch labels, not reused from the
+controlled-label ones. If the split works, the controlled threshold stops being a training
+constant: the 0/1/2/3 s sweep runs on the decoded sequence, one training run instead of one per
+threshold. The sweep measures how much our result depends on that convention; it is not a
+search for the challenge's private definition, and nothing touches the competition match.
+
+**Status: code written 2026-11-11, NOT RUN - no numbers yet.** Proposed decision rule (a
+proposal for the team, not a validated result): the split is worth keeping only if, under the
+same protocol (same cells as E25, evaluation labels fixed at `controlled(gt, 2.0)`), it beats
+the E25 `mix+ctx+turn` row fitted and scored the same way on the selection cells, without a
+clear loss on the sc_real cell; a win only on simulated gaps, or with fragmented possessions
+(n_pred well above n_gt), argues for dropping it. Candidate 1's 0.6742 orients the comparison;
+it is not a fixed threshold. Each cell reports spellF1, macroF1 and predicted/gt spell counts
+at min_s 0/1/2/3, per game.
+
+Risks to check when it runs: the classifier's 1-in-4 subsampling may thin sub-second touch
+spells; touch-level spells are shorter, so the duration histograms move left and the out-of-fold
+temperature may shift.
+
+Run: `python experiments/e28_touch_then_controlled.py mix+ctx+turn` (same machine budget as
+E25: one job at a time, 20-60 min). Label-logic tests: `tests/test_touch_then_controlled.py`
+(pure numpy, no data needed).
+
+## E29 the stacking weight is a choice, measure it (`experiments/e29_stack_weights.py`)
+
+E27 stacked the classifier and the sequence model with a FIXED 50/50 geometric mean ("no weight
+is fitted"), so half of the fused score comes from a model that alone loses to candidate 1.
+This entry sweeps the sequence model's share at 0/25/50/75/100 % on the saved E25/E27
+probabilities - no training, minutes to run - with the weight chosen on the out-of-fold
+probabilities of the training games only, never on the test cells. The full test sweep is
+printed to read the curve, but the reported weight is the out-of-fold one; picking the
+best-looking weight from the test numbers would make them optimistic. The 0 and 100 rows also
+separate "better model" from "better mix".
+
+**Status: code written 2026-11-11, NOT RUN - no numbers yet.** Proposed decision rule (a
+proposal for the team, not a validated result): a weight other than 50/50 is worth keeping only
+if, under the same protocol, it beats the 50/50 row and the w=0 row (the classifier alone) on
+the selection cells, without a clear loss on the dark and sc_real cells. The weight and the
+HSMM temperature are chosen on out-of-fold probabilities of the training games only; the E27
+figures (0.6745 stack, 0.6742 candidate 1) orient the comparison and are not fixed thresholds.
+
+Run: `python experiments/e29_stack_weights.py nn mix+ctx+turn` (needs the out/e25 and out/e27
+dumps). Fusion tests: `tests/test_stack_weights.py`.
+
 ## Submissions of 2026-11-11
 
 **Candidate 1** (`python make_submission.py --model v2 --min-s 2 --fill --decoder hsmm --drop-outside --regimes mix --context --turnover`)
