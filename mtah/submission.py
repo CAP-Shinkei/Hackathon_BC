@@ -11,7 +11,7 @@ from dataclasses import asdict, dataclass
 import joblib
 import numpy as np
 
-from mtah import decode, gapsim, model, rules
+from mtah import decode, features, gapsim, model, rules
 from mtah.schema import A, D, H, LETTERS, X
 
 HEADER = "frame,label"
@@ -97,7 +97,7 @@ def train_bundle(matches, train_regimes, train_seed, model_seeds, params, temper
     module = _feature_module(feature_module)
     X_list, y_list, blocks_list, names = _training_features(
         matches, real_matches, train_regimes, train_seed, drop_outside, module)
-    swap = module.swap_index(names)
+    swap = features.swap_index(names)
     fitted = _fit_models(X_list, y_list, blocks_list, swap, params, model_seeds)
     labels = [match.labels for match in tuple(matches) + real_matches]
     blocks = [match.blocks for match in tuple(matches) + real_matches]
@@ -160,7 +160,7 @@ def predict_codes(bundle, match, kickoff_frames=None):
     module = _feature_module(bundle.feature_module)
     X, names = module.featurise(prepared)
     _check_feature_names(names, bundle.names)
-    proba = _mean_proba(bundle, X, module.swap_index(names))
+    proba = _mean_proba(bundle, X, features.swap_index(names))
     blocks = _kicked_off_blocks(match.blocks, kickoff_frames)
     return decode.decode_blocks(proba, blocks, bundle.dur_logpmf, bundle.trans_log,
                                 temperature=bundle.temperature, step=bundle.step,

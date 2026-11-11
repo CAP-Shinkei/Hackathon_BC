@@ -254,3 +254,16 @@ def test_real_matches_need_labels_too():
     with pytest.raises(ValueError, match="labels"):
         submission.train_bundle([make_match("S1", 11)], ("random35",), 1, (0,), TRAIN_PARAMS,
                                 TEMPERATURE, STEP, 0, real_matches=[unlabelled])
+
+
+def test_bundle_trains_and_predicts_with_the_extended_features():
+    train = [make_match("S1", 11)]
+    held_out = gapsim.damage(make_match("T1", 41), gapsim.REGIMES["random35"], 5)
+
+    bundle = submission.train_bundle(train, ("random35",), 1, (0,), TRAIN_PARAMS,
+                                     TEMPERATURE, STEP, 0, feature_module="features_v2")
+    codes = submission.predict_codes(bundle, held_out)
+
+    assert bundle.feature_module == "features_v2"
+    assert codes.shape == (TOTAL_FRAMES,)
+    assert set(np.unique(codes)) <= {H, A, D}
