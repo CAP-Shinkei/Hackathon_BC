@@ -16,6 +16,7 @@ from mtah.external import dfl, metrica  # noqa: E402
 
 CONTROLLED_S = 2.0
 BENCH = ("random35", "mixed41_art", "dark50")
+MIX = ("random35", "mixed41", "mixed41_art", "dark50")
 BASE = Config(name="e16_base")
 CONFIGS = {c.name: c for c in (
     BASE,
@@ -30,7 +31,18 @@ CONFIGS = {c.name: c for c in (
     replace(BASE, name="e17_mix_t2", temperature=2.0, eval_regimes=BENCH,
             train_regimes=("random35", "mixed41", "mixed41_art", "dark50")),
     replace(BASE, name="e18_v2", temperature=4.0, eval_regimes=BENCH, feature_version="v2",
-            train_regimes=("random35", "mixed41", "mixed41_art", "dark50")),
+            train_regimes=MIX),
+    # E19: decoder only, so these reuse the cached probabilities of e17_mix_train.
+    replace(BASE, name="e19_min25", temperature=4.0, eval_regimes=BENCH, train_regimes=MIX,
+            min_frames=25),
+    replace(BASE, name="e19_min50", temperature=4.0, eval_regimes=BENCH, train_regimes=MIX,
+            min_frames=50),
+    replace(BASE, name="e19_t3", temperature=3.0, eval_regimes=BENCH, train_regimes=MIX),
+    replace(BASE, name="e19_t6", temperature=6.0, eval_regimes=BENCH, train_regimes=MIX),
+    replace(BASE, name="e19_step3", temperature=4.0, eval_regimes=BENCH, train_regimes=MIX,
+            step=3),
+    replace(BASE, name="e21_seeds5", temperature=4.0, eval_regimes=BENCH, train_regimes=MIX,
+            model_seeds=(0, 1, 2, 3, 4)),
 )}
 
 
