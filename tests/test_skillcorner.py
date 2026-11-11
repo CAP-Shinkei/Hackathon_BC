@@ -416,3 +416,85 @@ def test_build_match_end_to_end_marks_ball_missing_frames_as_nan(tmp_path):
     # Assert
     assert np.isfinite(match.ball_xy[0]).all()
     assert np.isnan(match.ball_xy[2]).all()
+
+
+def test_load_builds_once_then_reads_the_same_match_from_its_cache(tmp_path, monkeypatch):
+    # Arrange
+    _write_synthetic_match(tmp_path)
+    game_id = skillcorner.GAME_PREFIX + MATCH_ID
+
+    # Act
+    built = skillcorner.load(game_id, data_dir=tmp_path)
+    monkeypatch.setattr(skillcorner, "_build_match", _refuse_to_build)
+    cached = skillcorner.load(game_id, data_dir=tmp_path)
+
+    # Assert
+    assert (tmp_path / (game_id + skillcorner.CACHE_SUFFIX)).exists()
+    assert cached.blocks == built.blocks and cached.pitch == built.pitch
+    for name in ("home_xy", "away_xy", "ball_xy", "labels"):
+        np.testing.assert_array_equal(getattr(cached, name), getattr(built, name))
+
+
+def _refuse_to_build(game_id, data_dir):
+    raise AssertionError("the cache was not used for {}".format(game_id))
+
+
+def test_download_fetches_only_the_files_that_are_missing(tmp_path, monkeypatch):
+    # Arrange
+    fetched = []
+
+    def fake_stream(url, target):
+        fetched.append(url)
+        target.write_text("data", encoding="utf-8")
+
+    monkeypatch.setattr(skillcorner, "MATCH_IDS", (MATCH_ID,))
+    monkeypatch.setattr(skillcorner, "_stream_to_file", fake_stream)
+    present = skillcorner._raw_path(tmp_path, MATCH_ID, "tracking")
+    present.write_text("already here", encoding="utf-8")
+
+    # Act
+    skillcorner.download(tmp_path)
+
+    # Assert
+    assert len(fetched) == len(skillcorner.FILE_SUFFIXES) - 1
+    assert present.read_text(encoding="utf-8") == "already here"
+    assert not any(url.startswith(skillcorner.LFS_URL.split("{")[0]) for url in fetched)
+
+
+class _Response:
+    def __init__(self, status_code, chunks=()):
+        self.status_code, self._chunks = status_code, chunks
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        return False
+
+    def iter_content(self, chunk_size):
+        return iter(self._chunks)
+
+
+def test_stream_to_file_refuses_an_error_status_and_leaves_no_file(tmp_path, monkeypatch):
+    # Arrange
+    target = tmp_path / "file.json"
+    monkeypatch.setattr(skillcorner.requests, "get", lambda url, **kwargs: _Response(404))
+
+    # Act / Assert
+    with pytest.raises(OSError, match="HTTP 404"):
+        skillcorner._stream_to_file("https://example.invalid/file.json", target)
+    assert not target.exists()
+
+
+def test_stream_to_file_writes_the_body_under_the_final_name(tmp_path, monkeypatch):
+    # Arrange
+    target = tmp_path / "file.json"
+    monkeypatch.setattr(skillcorner.requests, "get",
+                        lambda url, **kwargs: _Response(200, (b"ab", b"cd")))
+
+    # Act
+    skillcorner._stream_to_file("https://example.invalid/file.json", target)
+
+    # Assert
+    assert target.read_bytes() == b"abcd"
+    assert not (tmp_path / "file.json.part").exists()

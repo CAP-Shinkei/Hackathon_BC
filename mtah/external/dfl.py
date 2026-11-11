@@ -256,7 +256,7 @@ def parse_positions(xml_path, home_team_id, away_team_id, pitch):
     ball_xy, status, possession = _ball_track(sets, spans, offsets, total)
     home_ids, home_xy = _team_track(sets, "home", spans, offsets, total)
     away_ids, away_xy = _team_track(sets, "away", spans, offsets, total)
-    blocks = tuple((offset, offset + count) for offset, (_, count) in zip(offsets, spans))
+    blocks = tuple((offset, offset + count) for offset, (_, count) in zip(offsets, spans, strict=True))
     return {
         "home_xy": home_xy, "away_xy": away_xy, "ball_xy": ball_xy,
         "ball_status": status, "ball_possession": possession,

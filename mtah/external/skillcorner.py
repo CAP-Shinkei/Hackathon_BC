@@ -213,7 +213,7 @@ def _unknown_runs(owner):
     """(start, stop) of every maximal run of UNKNOWN in owner."""
     unknown = np.concatenate(([False], owner == UNKNOWN, [False])).astype(np.int8)
     edges = np.flatnonzero(np.diff(unknown))
-    return list(zip(edges[::2].tolist(), edges[1::2].tolist()))
+    return list(zip(edges[::2].tolist(), edges[1::2].tolist(), strict=True))
 
 
 def fill_short_gaps(owner, short_frames):

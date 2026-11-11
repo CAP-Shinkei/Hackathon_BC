@@ -69,7 +69,7 @@ def _match_training_part(X, labels, blocks, swap_idx, stride):
 
 def _training_set(X_list, y_list, blocks_list, swap_idx, stride):
     parts_X, parts_y = [], []
-    for X, labels, blocks in zip(X_list, y_list, blocks_list):
+    for X, labels, blocks in zip(X_list, y_list, blocks_list, strict=True):
         X = np.asarray(X, dtype=np.float32)
         labels = np.asarray(labels)
         if X.ndim != 2 or len(labels) != len(X):

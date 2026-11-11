@@ -67,7 +67,7 @@ def _duration_counts(labels_list, blocks_list, max_s, step):
     _check_pairs(labels_list, blocks_list)
     d_max = _n_duration_bins(max_s, step)
     counts = np.zeros((N_STATES, d_max))
-    for labels, blocks in zip(labels_list, blocks_list):
+    for labels, blocks in zip(labels_list, blocks_list, strict=True):
         labels = np.asarray(labels)
         for start, stop in blocks:
             _, lengths, runs = _segments(labels[start:stop])
@@ -97,7 +97,7 @@ def count_durations(labels_list, blocks_list, max_s=90.0, step=5):
 def _transition_counts(labels_list, blocks_list):
     _check_pairs(labels_list, blocks_list)
     counts = np.zeros((N_STATES, N_STATES))
-    for labels, blocks in zip(labels_list, blocks_list):
+    for labels, blocks in zip(labels_list, blocks_list, strict=True):
         labels = np.asarray(labels)
         for start, stop in blocks:
             _, _, runs = _segments(labels[start:stop])
@@ -230,7 +230,7 @@ def refine_boundaries(codes, proba, radius=5):
 
 
 def _merge_block(block_codes, min_frames):
-    starts, lengths, runs = _segments(block_codes)
+    _, lengths, runs = _segments(block_codes)
     labels = runs.astype(np.int8)
     for j in range(len(labels)):
         if labels[j] == D or lengths[j] >= min_frames:

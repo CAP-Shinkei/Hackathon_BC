@@ -20,7 +20,7 @@ def _controlled_block(codes, min_frames):
     while changed:
         changed = False
         starts, stops = _runs(out)
-        for i, (a, b) in enumerate(zip(starts, stops)):
+        for i, (a, b) in enumerate(zip(starts, stops, strict=True)):
             if out[a] not in (H, A) or b - a >= min_frames:
                 continue
             before = out[a - 1] if i > 0 else D

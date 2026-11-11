@@ -72,7 +72,7 @@ def _read_frames(raw_path, n_frames, n_slots):
                 skipped += 1
     if skipped:
         warnings.warn("{}: {} non-empty lines are not frame records and were skipped".format(
-            raw_path, skipped))
+            raw_path, skipped), stacklevel=2)
     return frames
 
 
