@@ -135,3 +135,37 @@ validación), así que 0,596 sobreestima lo que se ganaría en otro tracking.
 retroceso en simulado). Motivo: no sabemos a cuál de los dos supuestos se parece BAR-ATH; el
 único dato publicado (balón ausente en el 41 % de los frames) coincide con SkillCorner (≈ 40 %),
 y el coste en el peor caso (−0,006) es veinte veces menor que la ganancia en el otro.
+
+## E22 — Filtro de plausibilidad física del balón
+
+Base `e24_v2_real` más `ballclean.drop_implausible` (descarta detecciones de balón que exigirían
+más de 45 m/s) antes de calcular las pistas.
+
+| Config | Simulado | macroF1 | random35 | mixed41_art | dark50 | Real | macroF1 real |
+|---|---|---|---|---|---|---|---|
+| e24_v2_real | 0,6912 | 0,8902 | 0,690 | 0,672 | 0,711 | 0,5957 | 0,8857 |
+| e22_clean | 0,6932 | 0,8906 | 0,690 | 0,678 | 0,711 | 0,5994 | 0,8872 |
+
+Emparejado en simulado: +0,002 de media, mejora en 8 de 10 partidos.
+**Lectura**: ayuda donde debe (régimen con detecciones falsas, +0,006) y no estropea nada, pero
+la ganancia media queda muy por debajo del umbral de +0,01.
+**Decisión**: no se adopta. El código queda disponible (`Config.clean_ball`).
+
+## No realizados
+
+E20 (regla de posesión 0/1/2/3 s) y E23 (red temporal) no se hicieron por plazo.
+
+## Candidato final
+
+`e24_v2_real`: pistas `features_v2`; entrenamiento con `random35`, `mixed41`, `mixed41_art`,
+`dark50` sobre DFL + Metrica, más SkillCorner tal como viene; temperatura 4, paso 5, sin fusión
+de posesiones cortas, una semilla. El modelo entregado (`scripts/train.py`, valores por defecto)
+usa los 20 partidos de SkillCorner en lugar de 12.
+
+## Notas de revisión
+
+- `dark50` y `mixed41*` ocultan paradas usando las etiquetas reales del partido; sus cifras
+  simuladas son por tanto optimistas. La medida independiente es SkillCorner.
+- Hasta E22 las claves de caché no incluían la definición de etiquetas ni los parámetros de los
+  regímenes. Ninguno de los dos cambió entre E16 y E24, así que las cifras no se ven afectadas;
+  la clave ya los incluye.

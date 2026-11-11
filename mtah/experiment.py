@@ -44,16 +44,34 @@ class Config:
         return hashlib.md5(json.dumps(keep, sort_keys=True).encode()).hexdigest()[:10]
 
 
+def _digest(*parts):
+    digest = hashlib.md5()
+    for part in parts:
+        digest.update(part if isinstance(part, bytes) else repr(part).encode())
+    return digest.hexdigest()[:8]
+
+
+def _labels_digest(match):
+    return _digest(b"" if match.labels is None else np.ascontiguousarray(match.labels).tobytes())
+
+
+def _pool_digest(matches):
+    """Identity of a training pool: which games, in which order, with which labels."""
+    return _digest(*[(m.game_id, _labels_digest(m)) for m in matches])
+
+
 def featurise_cached(match, regime_name, seed, cfg, featurise=features.featurise):
     """(X, names) of one damaged game. `regime_name` None means the game as loaded."""
-    tag = "{}_{}_{}_{}_{}".format(match.game_id, regime_name, seed, cfg.feature_version,
-                                  int(cfg.drop_outside)) + ("_clean" if cfg.clean_ball else "")
+    regime = None if regime_name is None else gapsim.REGIMES[regime_name]
+    # The damage depends on the regime's parameters and, for hidden stoppages, on the labels.
+    tag = "{}_{}_{}_{}_{}{}_{}".format(
+        match.game_id, regime_name, seed, cfg.feature_version, int(cfg.drop_outside),
+        "_clean" if cfg.clean_ball else "", _digest(regime, _labels_digest(match)))
     path = os.path.join(CACHE, "features", tag + ".npz")
     if os.path.exists(path):
         with np.load(path, allow_pickle=False) as data:
             return data["X"], [str(n) for n in data["names"]]
-    damaged = match if regime_name is None else gapsim.damage(
-        match, gapsim.REGIMES[regime_name], seed)
+    damaged = match if regime is None else gapsim.damage(match, regime, seed)
     if cfg.drop_outside:
         damaged = rules.drop_far_outside(damaged)
     if cfg.clean_ball:
@@ -83,7 +101,8 @@ def fit_fold(train_matches, cfg, featurise=features.featurise, real=()):
 
 def fold_proba(held_out, train_matches, cfg, featurise=features.featurise, real=()):
     """{(regime, seed): P[T,3]} for the held-out game, cached per model key."""
-    folder = os.path.join(CACHE, "proba", cfg.model_key())
+    folder = os.path.join(CACHE, "proba", "{}_{}".format(
+        cfg.model_key(), _pool_digest(list(train_matches) + list(real) + [held_out])))
     wanted = [(r, s) for r in cfg.eval_regimes for s in cfg.eval_seeds]
     paths = {key: os.path.join(folder, "{}_{}_{}.npy".format(held_out.game_id, *key))
              for key in wanted}

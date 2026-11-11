@@ -151,7 +151,22 @@ def test_featurise_cached_writes_separate_file_for_cleaned_ball(cache_root):
 
     # Assert
     files = os.listdir(os.path.join(cache_root, "features"))
-    assert files == ["game_d_None_0_v1_1_clean.npz"]
+    assert len(files) == 1
+    assert files[0].startswith("game_d_None_0_v1_1_clean_")
+
+
+def test_featurise_cached_does_not_reuse_features_after_labels_change(cache_root):
+    # Arrange
+    cfg = _fast_config()
+    match = _match("game_e")
+    relabelled = match.with_labels(np.roll(match.labels, 1))
+
+    # Act
+    featurise_cached(match, "dark50", 1, cfg, _featurise)
+    featurise_cached(relabelled, "dark50", 1, cfg, _featurise)
+
+    # Assert
+    assert len(os.listdir(os.path.join(cache_root, "features"))) == 2
 
 
 def test_fit_fold_trains_one_model_per_model_seed_and_returns_swap_index(cache_root):
