@@ -24,11 +24,11 @@ Mechanism (deliberately small, E30):
      the same tracking clues mtah.features already computes: who is nearest and by how much,
      how the ball's velocity breaks at the entry and the exit of the contact, whether the
      next contact belongs to the same team, and how much of the episode is even visible.
-  3. A decision confirms or rejects the candidate. Confirmed: the start is attributed to
-     the first raw contact of the acquiring team inside the episode (choose_start), which
-     can precede the moment the candidate fired. Rejected: possession stays with the
-     previous owner. "Contested" is an internal state of an unconfirmed candidate, never a
-     fourth label.
+  3. A decision confirms or rejects the candidate. Confirmed: the start is selected
+     among the episode's candidate contact beginnings by their support (choose_start),
+     which can precede the moment the candidate fired but is never automatically the
+     first brush. Rejected: possession stays with the previous owner. "Contested" is an
+     internal state of an unconfirmed candidate, never a fourth label.
   4. The decision enters decoding as a per-boundary log-odds adjustment on the HSMM's
      team-to-team transition (mtah.hsmm.decode(..., trans_adjust=...)), placed at t_start.
      Frames without a candidate carry no adjustment, so the decoder is unchanged wherever
@@ -99,27 +99,41 @@ def candidates(near_filled, n_frames=None):
     return out
 
 
-def choose_start(near, cand, window=F.PASS):
-    """Retro-attribution of the start: the first raw contact of the acquiring team inside
-    the episode. The voted boundary t0 fires only once the team dominates the 0.5 s vote;
-    the raw nearest-team run that made it fire usually starts earlier. We walk back from t0
-    to the start of that raw run - and never further: the first brush of the ball is not
-    automatically the start, only the contact the episode's evidence is about.
+def choose_start(near, cand, window=2 * F.PASS, support_s=1.0):
+    """The best-supported start inside the episode - a selection, not the first brush.
+
+    Candidate starts: the beginnings of the acquiring team's raw contact runs in the
+    window ending at the voted boundary t0 (flicker included: each raw run start is a
+    candidate). Every candidate is scored by its SUPPORT - the share of the next
+    support_s seconds that the team actually stays nearest to the ball - and the
+    best-supported start wins; ties go to the LATER start, so a brief early brush the
+    play did not follow up cannot pull the possession start back to it. With one clean
+    contact this reduces to that contact's first frame.
+
+    This is a documented heuristic, not a learned selection: scoring starts with the
+    episode MODEL would be circular before the annotations exist, and it is a listed
+    follow-up to revisit against them.
     """
     own = 0 if cand["team"] == HOME else 1
     t0 = cand["t0"]
-    t = t0
-    if near[t] != own:  # the vote can fire on a frame the raw sequence gives to nobody
-        fwd = t0 + 1 + int(np.argmax(near[t0 + 1:t0 + 1 + window] == own)) \
-            if (near[t0 + 1:t0 + 1 + window] == own).any() else t0
-        t = fwd
-    while t > 0 and near[t - 1] == own:
-        t -= 1
-    return t
+    n = len(near)
+    lo = max(0, t0 - window)
+    raw = near == own
+    starts = list(np.flatnonzero(raw[lo + 1:t0 + 1] & ~raw[lo:t0]) + lo + 1)
+    if raw[lo] and (not starts or starts[0] != lo):
+        starts = [lo] + starts  # a run already open at the window's edge
+    if not starts:  # the vote fired on a frame the raw sequence never gives to the team
+        return t0
+    best_s, best = t0, -1.0
+    for s in starts:
+        support = float(np.mean(raw[s:min(n, s + int(support_s * FPS))]))
+        if support >= best:  # >= keeps the LATER start on ties
+            best, best_s = support, s
+    return best_s
 
 
 def propose(near, near_filled):
-    """Candidates with the start retro-attributed: the full episode proposal step."""
+    """Candidates with the start selected by support: the full episode proposal step."""
     cands = candidates(near_filled)
     for cand in cands:
         cand["t_start"] = choose_start(near, cand)
@@ -246,7 +260,7 @@ def _logit(p):
 def decide(cands, p_acquire, threshold=0.5):
     """One decision per candidate: confirmed or rejected, with both times kept apart.
 
-    t_start comes from choose_start (retro-attribution); t_confirm is bookkeeping: the
+    t_start comes from choose_start (support-based selection); t_confirm is bookkeeping: the
     first frame by which every clue the score consumed has arrived - the pass that
     confirms a first-time control when it arrives, else the end of the aftermath window.
     A rejected candidate means possession stays with the previous owner; an episode that
