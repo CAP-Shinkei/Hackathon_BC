@@ -492,6 +492,62 @@ figures (0.6745 stack, 0.6742 candidate 1) orient the comparison and are not fix
 Run: `python experiments/e29_stack_weights.py nn mix+ctx+turn` (needs the out/e25 and out/e27
 dumps). Fusion tests: `tests/test_stack_weights.py`.
 
+## E30 control acquisition by evidence: start vs confirmation (`experiments/e30_control_acquisition.py`)
+
+Hypothesis (Álvaro, 2026-11-12): the open question E28 left on the table - deciding
+possession changes by a fixed duration (0.5/1/2/3 s) is the wrong axis. A 0.4 s contact can
+be a rebound back to the previous team or a clean take ended by a first-time pass; what
+separates them is the episode's evidence, not its length. E30 splits two moments the
+duration rule conflates: t_start (when control was gained) and t_confirm (when enough
+evidence has arrived to believe it). Confirming late does not force the possession to
+start late.
+
+Mechanism (`mtah/acquire.py`, ~300 lines, no new model type): candidates fire from the
+contact sequence itself - runs of which team is nearest to the ball, with a vote short
+enough (0.12 s) that a sub-second control still gets proposed. Each candidate episode is
+scored by ONE regularized logistic regression on episode summaries built from the same
+clues mtah.features already computes (nearest-team margins, velocity breaks at the entry
+and exit of the contact, what the next contact is, how much of the episode is visible) -
+not a second per-frame classifier, and not 25 correlated posteriors a second multiplied
+into fictitious confidence. A confirmed episode attributes its start back to the first raw
+contact of the acquiring team inside the episode (never automatically the first brush); a
+rejected one leaves possession with the previous owner; "contested" is an internal state,
+never a fourth label. The decision enters decoding as a per-boundary log-odds adjustment
+on the HSMM's team-to-team transition (`mtah/hsmm.py: decode(..., trans_adjust=...)`,
+default path bit-identical), placed at t_start. The 2 s rule is never re-applied after the
+adjustment: a fixed duration must not erase decisions the evidence rule just made.
+
+What E30 may conclude, in order:
+- Plumbing (runnable today): the proposal/feature/decision chain runs on the external
+  games leave-one-game-out; scores compared with controlled(gt, 2 s) measure AGREEMENT
+  WITH THE CONVENTION ONLY. An estimator that imitates the 2 s rule scores perfectly
+  against labels made by the 2 s rule - that circle is why the next step exists.
+- Semantics (needs people): `external/control_annotation.py` defines an independent
+  annotation contract - every candidate reviewed with NO duration threshold, uncertain
+  marked and excluded (never counted as negatives), nothing derived from the answer keys.
+  `--emit-worksheets` writes the per-game worksheets, `--annotations` scores against the
+  filled ones. Until those exist, any number E30 prints is plumbing, not evidence.
+
+Rules position (deliberate): everything fits on the external games only. Nothing touches
+the competition match, its tracking, its video, its labels or the public 5 minutes - the
+organizers' 2026-11-03 clarification requires training and tuning on external data only,
+and the published RULES.md passage that might allow more is unresolved.
+
+Proposed decision rule (a proposal for the team, not a validated result): E30 feeds the
+submission decode only if, against the ANNOTATIONS, its episode score beats the fixed-rule
+baseline on precision/recall of acquisitions AND, wired into candidate 1's decode on the
+external games, it does not fragment possessions (n_pred near n_gt) or lose clearly on the
+selection cells. Until the annotations exist, the answer is "not decided".
+
+**Status: code written 2026-11-12, NOT RUN - no numbers yet.** Unit tests:
+`tests/test_acquire.py` (synthetic tracking: short contacts fire candidates, starts are
+retro-attributed, confirmation lags without moving the start, signed transition evidence
+moves the HSMM switch, default decode bit-identical, worksheet validation). Integration
+with candidate 1's decode and the annotation worksheets are the follow-ups.
+
+Run: `python experiments/e30_control_acquisition.py` (plumbing vs the 2 s reference);
+`--emit-worksheets out/e30/worksheets`; `--annotations out/e30/worksheets`.
+
 ## Submissions of 2026-11-11
 
 **Candidate 1** (`python make_submission.py --model v2 --min-s 2 --fill --decoder hsmm --drop-outside --regimes mix --context --turnover`)
