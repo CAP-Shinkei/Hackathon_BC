@@ -25,7 +25,7 @@ FPS = 25
 PITCH = (105.0, 68.0)
 
 
-def scenario(clean_take=True, deflection=True, n=750):
+def scenario(clean_take=True, deflection=True, n=750, brush=False):
     """Ball and 4 track slots (2 home, 2 away) for: home controls, away takes and plays a
     first-time pass to a teammate, then (optionally) a 0.4 s home deflection goes back to
     away. Returns (ball, players, teams, near)."""
@@ -52,6 +52,8 @@ def scenario(clean_take=True, deflection=True, n=750):
         players[t] = [home0, home1, away0, away1]
         if owner is not None:
             players[t, owner] = pos + off
+        if brush and 240 <= t < 243:
+            players[t, 2] = pos + off   # a brief away brush 7 frames before the real take
     near = nearest_team(ball, players, teams, PITCH)
     return ball, players, teams, near
 
@@ -73,6 +75,16 @@ def test_start_is_retro_attributed_to_the_raw_contact():
     assert take["t_start"] <= take["t0"]       # never later than the voted boundary
     assert near[take["t_start"]] == 1          # a real away contact, not the vote's frame
     assert abs(take["t_start"] - 250) <= 5
+
+
+def test_start_selection_prefers_supported_contact_over_first_brush():
+    # The agreed rule: the best-SUPPORTED start inside the episode wins, so a short brush
+    # just before the real take must not pull the possession start back to it.
+    ball, players, teams, near = scenario(brush=True)
+    cands = acquire.propose(near, near)
+    take = next(c for c in cands if c["team"] == acquire.AWAY)
+    assert abs(take["t_start"] - 250) <= 3        # the take, not the brush at 240
+    assert near[take["t_start"]] == 1
 
 
 def test_episode_features_separate_take_from_deflection():
@@ -164,6 +176,27 @@ def test_hsmm_episode_evidence_moves_the_switch():
     adj[60] = 50.0
     switched = hsmm.decode(emis, blocks, log_dur, log_trans, len(emis), trans_adjust=adj)
     assert (switched[:60] == H).all() and (switched[60:] == A).all()
+
+
+def test_hsmm_adjust_leaves_dead_ball_transitions_alone():
+    # trans_adjust is evidence about TEAM-TO-TEAM switches only: a NEGATIVE adjustment
+    # at an H->D boundary (a rejected episode there) must change nothing, because the
+    # D-entering path never receives it and every alternative only gets worse.
+    n = 120
+    emis = np.zeros((n, 3))
+    emis[:60, H], emis[:60, A], emis[:60, D] = 0.0, -0.5, -0.5
+    emis[60:, H], emis[60:, A], emis[60:, D] = -0.5, -0.5, 0.0
+    hist = np.ones((3, 61))
+    hist[:, 0] = 0.0
+    with np.errstate(divide="ignore"):
+        log_dur = np.log(hist / hist.sum(axis=1, keepdims=True))
+    log_trans = np.log(np.full((3, 3), 1e-3) + np.eye(3))
+    adj = np.zeros(n + 1)
+    adj[60] = -50.0
+    plain = hsmm.decode(emis, [(0, n)], log_dur, log_trans, n)
+    with_adj = hsmm.decode(emis, [(0, n)], log_dur, log_trans, n, trans_adjust=adj)
+    assert np.array_equal(plain, with_adj)
+    assert (plain[:60] == H).all() and (plain[60:] == D).all()
 
 
 def test_annotation_worksheet_roundtrip_and_validation(tmp_path):
