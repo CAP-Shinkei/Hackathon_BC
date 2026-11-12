@@ -51,7 +51,9 @@ def count_durations(labels_list):
 
 
 @numba.njit(cache=True)
-def _decode(emis, log_dur, log_trans, log_p0):
+def _decode(emis, log_dur, log_trans, log_p0, trans_adjust):
+    # trans_adjust[t]: extra log-odds for a team-to-team switch whose new segment starts at
+    # frame t (mtah.acquire's episode evidence). All zeros = the plain HSMM, bit-identical.
     n, k = emis.shape
     dmax = log_dur.shape[1] - 1
     cum = np.zeros((n + 1, k))
@@ -83,6 +85,8 @@ def _decode(emis, log_dur, log_trans, log_p0):
         for s in range(k):
             for r in range(k):
                 w = best[t, r] + log_trans[r, s]
+                if r != s and r != D and s != D:
+                    w += trans_adjust[t]
                 if w > enter[t, s]:
                     enter[t, s] = w
                     enter_from[t, s] = r
@@ -102,10 +106,16 @@ def _decode(emis, log_dur, log_trans, log_p0):
     return path
 
 
-def decode(emis, blocks, log_dur, log_trans, n_frames):
+def decode(emis, blocks, log_dur, log_trans, n_frames, trans_adjust=None):
+    """trans_adjust: optional (n_frames + 1,) per-boundary log-odds on team-to-team
+    switches, indexed by absolute frame (mtah.acquire.transition_adjust). None decodes
+    exactly as before."""
+    if trans_adjust is None:
+        trans_adjust = np.zeros(n_frames + 1)
     out = np.full(n_frames, X, dtype=np.int8)
     log_p0 = np.log(np.array([0.45, 0.45, 0.10]))
     lt = log_trans.copy()
     for a, b in blocks:
-        out[a:b] = _decode(np.ascontiguousarray(emis[a:b]), log_dur, lt, log_p0)
+        out[a:b] = _decode(np.ascontiguousarray(emis[a:b]), log_dur, lt, log_p0,
+                           np.ascontiguousarray(trans_adjust[a:b + 1]))
     return out
