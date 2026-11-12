@@ -509,9 +509,13 @@ scored by ONE regularized logistic regression on episode summaries built from th
 clues mtah.features already computes (nearest-team margins, velocity breaks at the entry
 and exit of the contact, what the next contact is, how much of the episode is visible) -
 not a second per-frame classifier, and not 25 correlated posteriors a second multiplied
-into fictitious confidence. A confirmed episode attributes its start back to the first raw
-contact of the acquiring team inside the episode (never automatically the first brush); a
-rejected one leaves possession with the previous owner; "contested" is an internal state,
+into fictitious confidence. A confirmed episode SELECTS its start among the episode's candidate contact beginnings
+by their support - the share of the following second the acquiring team actually stays
+nearest to the ball, ties to the later start - so a brief early brush the play did not
+follow up cannot pull the start back to it. That selection is a documented heuristic, not
+a learned one: scoring starts with the episode model itself would be circular before the
+annotations exist, and revisiting it against them is a listed follow-up. A rejected
+episode leaves possession with the previous owner; "contested" is an internal state,
 never a fourth label. The decision enters decoding as a per-boundary log-odds adjustment
 on the HSMM's team-to-team transition (`mtah/hsmm.py: decode(..., trans_adjust=...)`,
 default path bit-identical), placed at t_start. The 2 s rule is never re-applied after the
@@ -540,9 +544,10 @@ external games, it does not fragment possessions (n_pred near n_gt) or lose clea
 selection cells. Until the annotations exist, the answer is "not decided".
 
 **Status: code written 2026-11-12, NOT RUN - no numbers yet.** Unit tests:
-`tests/test_acquire.py` (synthetic tracking: short contacts fire candidates, starts are
-retro-attributed, confirmation lags without moving the start, signed transition evidence
-moves the HSMM switch, default decode bit-identical, worksheet validation). Integration
+`tests/test_acquire.py` (synthetic tracking: short contacts fire candidates, the start
+selection prefers the supported contact over a prior brush, confirmation lags without
+moving the start, signed transition evidence moves the HSMM switch, dead-ball boundaries
+are untouched by it, default decode bit-identical, worksheet validation). Integration
 with candidate 1's decode and the annotation worksheets are the follow-ups.
 
 Run: `python experiments/e30_control_acquisition.py` (plumbing vs the 2 s reference);
